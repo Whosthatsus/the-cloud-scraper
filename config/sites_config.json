@@ -1,0 +1,92 @@
+{
+  "sites": [
+    {
+      "site_id": "books_toscrape",
+      "site_name": "Books to Scrape",
+      "base_url": "https://books.toscrape.com/",
+      "target_url": "https://books.toscrape.com/catalogue/page-1.html",
+      "enabled": true,
+      "schedule": "cron(0 12 * * ? *)",
+      "rate_limit_delay_seconds": 1.0,
+      "timeout_seconds": 15,
+      "max_retries": 3,
+      "container_selector": "article.product_pod",
+      "fields": {
+        "title": {
+          "selector": "h3 a",
+          "attribute": "title",
+          "fallback_selector": "h3 a",
+          "type": "string",
+          "required": true
+        },
+        "price": {
+          "selector": "p.price_color",
+          "type": "price",
+          "required": true
+        },
+        "availability": {
+          "selector": "p.instock.availability",
+          "type": "string",
+          "required": false
+        },
+        "rating": {
+          "selector": "p.star-rating",
+          "attribute": "class",
+          "type": "rating",
+          "required": false
+        },
+        "detail_link": {
+          "selector": "h3 a",
+          "attribute": "href",
+          "type": "url",
+          "required": true
+        }
+      },
+      "validation_rules": {
+        "required_fields": ["title", "price", "detail_link"],
+        "price_min": 0.0,
+        "price_max": 10000.0
+      }
+    },
+    {
+      "site_id": "quotes_toscrape",
+      "site_name": "Quotes to Scrape",
+      "base_url": "https://quotes.toscrape.com/",
+      "target_url": "https://quotes.toscrape.com/",
+      "enabled": true,
+      "schedule": "cron(0 6 * * ? *)",
+      "rate_limit_delay_seconds": 1.0,
+      "timeout_seconds": 15,
+      "max_retries": 3,
+      "container_selector": "div.quote",
+      "fields": {
+        "quote": {
+          "selector": "span.text",
+          "type": "string",
+          "required": true
+        },
+        "author": {
+          "selector": "small.author",
+          "type": "string",
+          "required": true
+        },
+        "author_url": {
+          "selector": "span a",
+          "attribute": "href",
+          "type": "url",
+          "required": false
+        },
+        "tags": {
+          "selector": "div.tags a.tag",
+          "is_list": true,
+          "type": "string_list",
+          "required": false
+        }
+      },
+      "validation_rules": {
+        "required_fields": ["quote", "author"],
+        "min_quote_length": 5
+      }
+    }
+  ]
+}

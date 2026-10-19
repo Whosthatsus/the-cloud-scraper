@@ -1,1 +1,8 @@
 packaged.template
+__pycache__/
+*.pyc
+.pytest_cache/
+.aws-sam/
+build/
+dist/
+*.egg-info/

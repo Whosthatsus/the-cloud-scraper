@@ -1,38 +1,22 @@
 [
   {
+    "ParameterKey": "pProjectName",
+    "ParameterValue": "the-cloud-scraper"
+  },
+  {
     "ParameterKey": "pS3BucketName",
-    "ParameterValue": "unique-bucket-name-dummy-2025"
-  },
-  {
-    "ParameterKey": "pSourceFolder",
-    "ParameterValue": "source"
-  },
-  {
-    "ParameterKey": "pStageFolder",
-    "ParameterValue": "stage"
-  },
-  {
-    "ParameterKey": "pTransformFolder",
-    "ParameterValue": "transform"
-  },
-  {
-    "ParameterKey": "pErrorFolder",
-    "ParameterValue": "error"
-  },
-  {
-    "ParameterKey": "pArchiveFolder",
-    "ParameterValue": "archive"
+    "ParameterValue": "the-cloud-scraper-datalake-cad-2026"
   },
   {
     "ParameterKey": "pEmailforNotification",
-    "ParameterValue": "valid-email@xyz.com"
+    "ParameterValue": "student-alerts@cad-course.edu"
   },
   {
-    "ParameterKey": "pPrefix",
-    "ParameterValue": "demo"
+    "ParameterKey": "pScrapeSchedule",
+    "ParameterValue": "cron(0 12 * * ? *)"
   },
   {
-    "ParameterKey": "pDatasetSchema",
-    "ParameterValue": "{\"Date\":{\"type\": \"datetime\", \"format\": \"%m/%d/%Y\" },\"Description\":{\"type\": \"string\"},\"Deposits\":{\"type\": \"float\"},\"Withdrawls\":{\"type\": \"float\"},\"Balance\":{\"type\": \"float\"}}"
+    "ParameterKey": "pDefaultSiteId",
+    "ParameterValue": "books_toscrape"
   }
 ]

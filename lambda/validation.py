@@ -1,74 +1,220 @@
-import json
-import pandas as pd
-from cerberus import Validator
-from datetime import datetime
-import boto3
+"""
+The Cloud Scraper - Data Validation and Cleaning Lambda Function
+Validates scraped records against declarative schema rules, filters
+malformed records, and enforces data quality standards before transformation.
+"""
+
 import os
-            
-        
-def lambda_handler(event, context):
-    
-    ''' 
-    This function validates input raw dataset against schema specified in the env variable
-    '''
+import json
+import logging
+from typing import Dict, List, Any, Tuple
+from urllib.parse import urlparse
 
-    print(event)
-    result = {}
-    s3_resource = boto3.resource('s3')
-    #to_date = lambda s: datetime.strptime(s, os.environ['dateformat'])
-    bucket_name = event['bucket_name']
-    key_name = event['key_name']
-    source_file_name = event['file_name']
-    #source_file_name_to_copy = bucket_name + "/" + key_name
-    #error_file_name="error/" + source_file_name
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
-    schema = {}
-    schema = json.loads(os.environ['schema'])   
 
-    for keys in schema:
-        if 'format' in schema[keys]:
-            date_format_provided = schema[keys]['format']
-            to_date = lambda s: datetime.strptime(s, date_format_provided)
-            schema[keys].pop("format")
-            schema[keys]['coerce'] = to_date
-    
-    v = Validator(schema)
-    v.allow_unknown = False
-    v.require_all = True
-    source_file_path = "s3://" + bucket_name + "/" + key_name
+def load_validation_rules(site_id: str) -> dict:
+    """Load validation rules for site from config."""
+    config_path = os.environ.get(
+        "SITES_CONFIG_PATH",
+        os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
+    )
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for site in data.get("sites", []):
+                    if site.get("site_id") == site_id:
+                        return site.get("validation_rules", {})
+        except Exception as e:
+            logger.warning("Could not read config at %s: %s", config_path, str(e))
+    return {}
+
+
+def is_valid_url(url: Any) -> bool:
+    """Check if value is a valid HTTP/HTTPS URL."""
+    if not isinstance(url, str) or not url.strip():
+        return False
     try:
-        df = pd.read_csv(source_file_path)
-        print("Successfuly read : " + source_file_path)
-    except:
-        result['Validation'] = "FAILURE"
-        result['Reason'] = "Errro while reading csv"
-        result['Location'] = os.environ['source_folder_name']
-        print("Error while reading csv")
-        return(result)      
-    result['Validation'] = "SUCCESS"
-    result['Location'] = os.environ['source_folder_name']
-    df_dict = df.to_dict(orient='records')
-    transformed_file_name = "s3://" + bucket_name + "/" + str(os.environ['stage_folder_name']) + "/" + source_file_name
+        parsed = urlparse(url.strip())
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
 
-    if len(df_dict) == 0:
-        result['Validation'] = "FAILURE"
-        result['Reason'] = "NO RECORD FOUND"
-        result['Location'] = os.environ['source_folder_name']
-        print("Moving file to error folder")
-        return(result)
-    for idx, record in enumerate(df_dict):
-        if not v.validate(record):
-            result['Validation'] = "FAILURE"
-            result['Reason'] = str(v.errors) + " in record number " + str(idx)
-            result['Location'] = os.environ['source_folder_name']
-            print("Moving file to error folder")
-            return(result)
-            break
 
-    df['Month'] = df['Date'].astype(str).str[0:2]
-    df['Day'] = df['Date'].astype(str).str[3:5]
-    df['Year'] = df['Date'].astype(str).str[6:10]
-    df.to_csv(transformed_file_name, index=False)
-    s3_resource.Object(bucket_name, key_name).delete()
-    print("Successfuly moved file to  : " + transformed_file_name)
-    return(result)
+def validate_single_record(
+    record: Dict[str, Any], validation_rules: Dict[str, Any]
+) -> Tuple[bool, List[str]]:
+    """
+    Validate an individual record against declarative rules.
+    Returns (is_valid, list_of_error_reasons).
+    """
+    errors = []
+
+    if not isinstance(record, dict) or not record:
+        return False, ["Record is empty or not a dictionary"]
+
+    # 1. Required fields check
+    required_fields = validation_rules.get("required_fields", [])
+    for field in required_fields:
+        val = record.get(field)
+        if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and len(val) == 0):
+            errors.append(f"Missing or empty required field: '{field}'")
+
+    # 2. URL fields validation
+    for key, val in record.items():
+        if "link" in key.lower() or "url" in key.lower():
+            if val is not None and not is_valid_url(val):
+                errors.append(f"Invalid URL format for '{key}': '{val}'")
+
+    # 3. Text length validation
+    min_quote_length = validation_rules.get("min_quote_length")
+    if min_quote_length and "quote" in record and isinstance(record["quote"], str):
+        if len(record["quote"].strip()) < int(min_quote_length):
+            errors.append(
+                f"Quote text too short ({len(record['quote'].strip())} < {min_quote_length})"
+            )
+
+    min_title_length = validation_rules.get("min_title_length", 2)
+    if "title" in record and isinstance(record["title"], str):
+        if len(record["title"].strip()) < int(min_title_length):
+            errors.append(f"Title text too short ({len(record['title'].strip())} < {min_title_length})")
+
+    # 4. Price presence and structure check
+    if "price" in record and record["price"] is not None:
+        price_val = str(record["price"])
+        if not any(char.isdigit() for char in price_val):
+            errors.append(f"Price field contains no numeric digits: '{price_val}'")
+
+    return (len(errors) == 0, errors)
+
+
+def filter_and_validate_records(
+    records: List[Dict[str, Any]], validation_rules: Dict[str, Any]
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Iterate through records, validating each and partitioning into valid and invalid sets.
+    """
+    valid_records = []
+    invalid_records = []
+
+    for idx, r in enumerate(records):
+        is_valid, errors = validate_single_record(r, validation_rules)
+        if is_valid:
+            valid_records.append(r)
+        else:
+            invalid_entry = {
+                "record_index": idx,
+                "record": r,
+                "errors": errors,
+            }
+            invalid_records.append(invalid_entry)
+            logger.warning("Record %d validation failed: %s", idx, ", ".join(errors))
+
+    return valid_records, invalid_records
+
+
+def lambda_handler(event, context=None):
+    """
+    AWS Lambda Handler for Validation.
+    Receives output from the scraper Lambda:
+    {
+      "site_id": "...",
+      "records": [...],
+      ...
+    }
+    """
+    logger.info("Validation handler received event for site: %s", event.get("site_id"))
+
+    site_id = event.get("site_id", "unknown_site")
+    raw_records = event.get("records", [])
+
+    if not raw_records:
+        logger.error("No records received in validation event for site: %s", site_id)
+        return {
+            "statusCode": 422,
+            "status": "FAILURE",
+            "Validation": "FAILURE",
+            "site_id": site_id,
+            "error": "No records found in scraper output to validate",
+            "total_scraped": 0,
+            "valid_count": 0,
+            "invalid_count": 0,
+            "records": [],
+            "invalid_records": [],
+        }
+
+    # Load validation rules for this site
+    validation_rules = load_validation_rules(site_id)
+    # Allow override in event if present
+    if "validation_rules" in event:
+        validation_rules.update(event["validation_rules"])
+
+    valid_records, invalid_records = filter_and_validate_records(raw_records, validation_rules)
+
+    total_count = len(raw_records)
+    valid_count = len(valid_records)
+    invalid_count = len(invalid_records)
+
+    logger.info(
+        "Validation complete for %s: %d total, %d valid, %d invalid",
+        site_id,
+        total_count,
+        valid_count,
+        invalid_count,
+    )
+
+    # If all records are invalid, treat as pipeline failure
+    if valid_count == 0:
+        return {
+            "statusCode": 422,
+            "status": "FAILURE",
+            "Validation": "FAILURE",
+            "site_id": site_id,
+            "site_name": event.get("site_name", site_id),
+            "target_url": event.get("target_url", ""),
+            "scraped_at": event.get("scraped_at", ""),
+            "raw_s3_key": event.get("raw_s3_key", ""),
+            "error": "All scraped records failed schema validation",
+            "total_scraped": total_count,
+            "valid_count": 0,
+            "invalid_count": invalid_count,
+            "records": [],
+            "invalid_records": invalid_records,
+        }
+
+    return {
+        "statusCode": 200,
+        "status": "SUCCESS",
+        "Validation": "SUCCESS",
+        "site_id": site_id,
+        "site_name": event.get("site_name", site_id),
+        "target_url": event.get("target_url", ""),
+        "scraped_at": event.get("scraped_at", ""),
+        "raw_s3_key": event.get("raw_s3_key", ""),
+        "total_scraped": total_count,
+        "valid_count": valid_count,
+        "invalid_count": invalid_count,
+        "records": valid_records,
+        "invalid_records": invalid_records,
+    }
+
+
+if __name__ == "__main__":
+    # Test validation locally
+    sample_records = [
+        {
+            "title": "A Light in the Attic",
+            "price": "£51.77",
+            "detail_link": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+        },
+        {
+            "title": "",
+            "price": "N/A",
+            "detail_link": "not-a-valid-url",
+        },
+    ]
+    res = lambda_handler({"site_id": "books_toscrape", "records": sample_records})
+    print(f"Validation result: {res['Validation']} - {res['valid_count']} valid, {res['invalid_count']} invalid")
+    print(json.dumps(res, indent=2))
