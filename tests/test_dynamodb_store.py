@@ -7,6 +7,7 @@ import sys
 import unittest
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
+from botocore.exceptions import ClientError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lambda"))
 import dynamodb_store
@@ -38,11 +39,9 @@ class TestDynamoDBStore(unittest.TestCase):
 
     @patch("dynamodb_store.boto3.resource")
     def test_store_records_in_dynamodb_mocked(self, mock_resource):
-        """Verify batch_writer is invoked properly for storing items."""
+        """Verify put_item is invoked with conditional expressions for deduplication."""
         mock_dynamo = MagicMock()
         mock_table = MagicMock()
-        mock_batch = MagicMock()
-        mock_table.batch_writer.return_value.__enter__.return_value = mock_batch
         mock_dynamo.Table.return_value = mock_table
         mock_resource.return_value = mock_dynamo
 
@@ -50,9 +49,30 @@ class TestDynamoDBStore(unittest.TestCase):
             {"record_id": "books#1", "site_id": "books", "price": 10.5},
             {"record_id": "books#2", "site_id": "books", "price": 20.0},
         ]
-        count = dynamodb_store.store_records_in_dynamodb("TestTable", records)
-        self.assertEqual(count, 2)
-        self.assertEqual(mock_batch.put_item.call_count, 2)
+        new_count, existing_count, err = dynamodb_store.store_records_in_dynamodb("TestTable", records)
+        self.assertEqual(new_count, 2)
+        self.assertEqual(existing_count, 0)
+        self.assertIsNone(err)
+        self.assertEqual(mock_table.put_item.call_count, 2)
+
+    @patch("dynamodb_store.boto3.resource")
+    def test_store_records_conditional_check_failed(self, mock_resource):
+        """Verify conditional check failure is handled as an existing duplicate item."""
+        mock_dynamo = MagicMock()
+        mock_table = MagicMock()
+        # Simulate ConditionalCheckFailedException for an existing record
+        mock_table.put_item.side_effect = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException", "Message": "The conditional request failed"}},
+            "PutItem",
+        )
+        mock_dynamo.Table.return_value = mock_table
+        mock_resource.return_value = mock_dynamo
+
+        records = [{"record_id": "books#1", "site_id": "books", "price": 10.5}]
+        new_count, existing_count, err = dynamodb_store.store_records_in_dynamodb("TestTable", records)
+        self.assertEqual(new_count, 0)
+        self.assertEqual(existing_count, 1)
+        self.assertIsNone(err)
 
     @patch("dynamodb_store.boto3.client")
     def test_save_transformed_json_to_s3_mocked(self, mock_client):
@@ -62,8 +82,9 @@ class TestDynamoDBStore(unittest.TestCase):
 
         records = [{"record_id": "books#1"}]
         metadata = {"site_id": "books_toscrape"}
-        key = dynamodb_store.save_transformed_json_to_s3("my-bucket", "books_toscrape", "20261020", records, metadata)
+        key, err = dynamodb_store.save_transformed_json_to_s3("my-bucket", "books_toscrape", "20261020", records, metadata)
         self.assertTrue(key.startswith("transform/books_toscrape/20261020/"))
+        self.assertIsNone(err)
         self.assertEqual(mock_s3.put_object.call_count, 2)
 
 

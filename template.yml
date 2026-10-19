@@ -348,6 +348,7 @@ Resources:
           S3_BUCKET_NAME: !Ref pS3BucketName
           DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
           SITES_CONFIG_PATH: config/sites_config.json
+          SQS_QUEUE_URL: !Ref ScraperJobQueue
       Events:
         OnDemandApiTrigger:
           Type: Api
@@ -355,6 +356,11 @@ Resources:
             Path: /scrape
             Method: post
             RestApiId: !Ref ApiGatewayRestApi
+        QueueJobTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScraperJobQueue.Arn
+            BatchSize: 1
 
   # ============================================================================
   # 7. AUTOMATION & TRIGGERS: EventBridge Rule & API Gateway

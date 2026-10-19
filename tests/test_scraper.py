@@ -97,6 +97,31 @@ class TestScraper(unittest.TestCase):
         self.assertTrue(result.get("is_retryable"))
         self.assertIn("Connection refused", result["error"])
 
+    @patch("scraper.requests.get")
+    def test_check_robots_allowed(self, mock_get):
+        """Verify robots.txt compliance checking."""
+        # Allowed case
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "User-agent: *\nDisallow: /admin/\n"
+        mock_get.return_value = mock_resp
+        self.assertTrue(scraper.check_robots_allowed("https://books.toscrape.com/", "https://books.toscrape.com/catalogue/page-1.html"))
+
+        # Disallowed case
+        mock_resp.text = "User-agent: *\nDisallow: /catalogue/\n"
+        self.assertFalse(scraper.check_robots_allowed("https://books.toscrape.com/", "https://books.toscrape.com/catalogue/page-1.html"))
+
+    def test_lambda_handler_mock_html(self):
+        """Verify scraper execution with provided mock_html fixture (deterministic offline test)."""
+        event = {
+            "site_id": "books_toscrape",
+            "mock_html": SAMPLE_BOOKS_HTML,
+        }
+        result = scraper.lambda_handler(event)
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["records_count"], 2)
+        self.assertEqual(result["records"][0]["title"], "Test Book Title")
+
 
 if __name__ == "__main__":
     unittest.main()

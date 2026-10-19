@@ -3,7 +3,7 @@
 > **Course:** Cloud Architecture Design (CAD)  
 > **Project Name:** The Cloud Scraper — Serverless Automated Data Pipeline  
 > **Derived From:** AWS Step Functions ETL Pipeline Pattern  
-> **Status:** Working Model & Automated Test Suite Passing (20/20 tests passed)
+> **Status:** Working Model & Automated Test Suite Passing (32/32 tests passed)
 
 ---
 
@@ -14,13 +14,13 @@
 In the original repository pattern, data ingestion was purely reactive and file-driven: users had to manually upload static CSV files into an S3 bucket to trigger execution. **The Cloud Scraper** transforms this architecture into an **active, automated web intelligence pipeline**:
 
 1. **Automated Ingestion:** Periodically fetches web data on configurable schedules via **Amazon EventBridge** or on-demand via **Amazon API Gateway** (REST endpoint).
-2. **Resilient Web Scraping:** Extracts structured content (titles, prices, ratings, authors, tags, URLs) using Python `Requests` and `BeautifulSoup` according to declarative, site-specific selector rules.
+2. **Resilient Web Scraping:** Extracts structured content (titles, prices, ratings, authors, tags, URLs) using Python `Requests` and `BeautifulSoup` according to declarative, site-specific selector rules, with built-in `robots.txt` compliance checking.
 3. **Data Quality & Hygiene:** Validates extracted records against strict schema and type rules, isolating malformed entities and rejecting corrupted feeds.
 4. **Deterministic Deduplication:** Normalizes text and numeric formats, computing a deterministic **SHA-256 fingerprint hash** per entity to prevent redundant storage across recurring scrape cycles.
 5. **Dual-Tier Cloud Storage:**
    - **Amazon S3 Data Lake:** Preserves immutable raw HTML snapshots (`raw/`) and versioned transformed JSON datasets (`transform/`).
-   - **Amazon DynamoDB:** Stores queryable, structured records with partition key `site_id`, sort key `record_id`, and a Global Secondary Index on `content_hash` for fast identity lookups. Complete data lineage is maintained with `source_url` and ISO 8601 timestamps (`scraped_at`, `transformed_at`).
-6. **Decoupling & Fault Isolation:** Employs **Amazon SQS** with an associated **Dead-Letter Queue (DLQ)** to isolate persistent scraping failures and network timeouts without stalling downstream services.
+   - **Amazon DynamoDB:** Stores queryable, structured records with partition key `site_id`, sort key `record_id`, and a Global Secondary Index on `content_hash` for fast identity lookups. Conditional writes (`attribute_not_exists(record_id)`) protect against redundant writes. Complete data lineage is maintained with `source_url` and ISO 8601 timestamps (`scraped_at`, `transformed_at`).
+6. **Decoupling & Fault Isolation:** Employs **Amazon SQS** (`ScraperJobQueue`) with an associated **Dead-Letter Queue (DLQ)** (`ScraperDLQ`) to decouple multi-site batches and isolate persistent scraping failures without stalling downstream services.
 7. **Workflow Orchestration:** Coordinated by **AWS Step Functions**, implementing exponential retry backoffs, task timeouts, and fail-safe catchers.
 8. **Observability & FinOps:** Enriches execution logs in **Amazon CloudWatch**, issues operational alerts through **Amazon SNS**, and calculates estimated per-run serverless execution costs.
 
@@ -105,23 +105,28 @@ the-cloud-scraper/
 │   ├── scraper.py                   # Website scraper & S3 raw snapshot archiver (Requests + BS4)
 │   ├── validation.py                # Schema & data hygiene validator
 │   ├── transformation.py           # Text cleaner, price/rating normalizer & SHA-256 deduplicator
-│   ├── dynamodb_store.py            # DynamoDB batch writer & S3 transformed JSON archiver
+│   ├── dynamodb_store.py            # DynamoDB batch writer (conditional writes) & S3 JSON archiver
 │   ├── start_step_function.py      # Job Dispatcher (EventBridge / API Gateway / SQS trigger)
 │   ├── notification.py             # FinOps cost estimator & SNS alert dispatcher
+│   ├── requirements.txt             # Lambda deployment package dependencies
 │   ├── move_file.py                 # (Preserved) S3 object management utility
 │   ├── s3object.py                  # (Preserved) S3 folder initialization utility
 │   ├── start_crawler.py             # (Preserved) Optional Glue Crawler starter
 │   └── check_crawler.py             # (Preserved) Optional Glue Crawler status checker
+├── scripts/
+│   └── package_lambdas.py           # Self-contained build script creating deployable zip with dependencies
 ├── tests/
-│   ├── test_scraper.py              # Unit tests for scraping & selector extraction
+│   ├── test_scraper.py              # Unit tests for scraping, robots.txt & selector extraction
 │   ├── test_validation.py           # Unit tests for schema validation & field filtering
 │   ├── test_transformation.py       # Unit tests for normalization & SHA-256 deduplication
-│   ├── test_dynamodb_store.py       # Unit tests for DynamoDB batch writing & Decimal conversion
+│   ├── test_dynamodb_store.py       # Unit tests for DynamoDB conditional writes & Decimal conversion
+│   ├── test_dispatcher.py           # Unit tests for EventBridge, API Gateway, and SQS parsing
+│   ├── test_notification.py         # Unit tests for FinOps calculation and SNS alert payloads
 │   └── test_pipeline_integration.py # End-to-end integration simulation of Step Functions workflow
 ├── pipeline_runner.py               # Local CLI simulator for testing the entire pipeline end-to-end
 ├── template.yml                     # Complete AWS SAM / CloudFormation Infrastructure-as-Code template
 ├── parameter.json                   # CloudFormation parameter overrides
-├── requirements.txt                 # Python project dependencies
+├── requirements.txt                 # Python project root dependencies
 └── README.md                        # Project documentation & architectural guide
 ```
 
@@ -164,73 +169,42 @@ pip install -r requirements.txt
 ```
 
 ### Step 2: Run the Automated Test Suite (PyTest)
-Execute all 20 unit and integration tests:
+Execute all 32 unit and integration tests across all pipeline modules:
 ```bash
 pytest -v tests/
 ```
 
 **Expected Result:**
 ```
-tests/test_dynamodb_store.py::TestDynamoDBStore::test_decimal_to_float_conversion PASSED
-tests/test_dynamodb_store.py::TestDynamoDBStore::test_float_to_decimal_conversion PASSED
-tests/test_dynamodb_store.py::TestDynamoDBStore::test_save_transformed_json_to_s3_mocked PASSED
-tests/test_dynamodb_store.py::TestDynamoDBStore::test_store_records_in_dynamodb_mocked PASSED
-tests/test_pipeline_integration.py::TestPipelineIntegration::test_full_pipeline_flow PASSED
-tests/test_scraper.py::TestScraper::test_fetch_page_content_success PASSED
-tests/test_scraper.py::TestScraper::test_lambda_handler_http_error PASSED
-tests/test_scraper.py::TestScraper::test_load_site_config_invalid PASSED
-tests/test_scraper.py::TestScraper::test_load_site_config_valid PASSED
-tests/test_scraper.py::TestScraper::test_parse_html_records PASSED
-tests/test_transformation.py::TestTransformation::test_clean_text_mojibake PASSED
-tests/test_transformation.py::TestTransformation::test_deduplication PASSED
-tests/test_transformation.py::TestTransformation::test_deterministic_content_hash PASSED
-tests/test_transformation.py::TestTransformation::test_parse_price PASSED
-tests/test_transformation.py::TestTransformation::test_parse_rating PASSED
-tests/test_validation.py::TestValidation::test_filter_and_validate_partitioning PASSED
-tests/test_validation.py::TestValidation::test_invalid_url PASSED
-tests/test_validation.py::TestValidation::test_lambda_handler_all_invalid_fails PASSED
-tests/test_validation.py::TestValidation::test_missing_required_field PASSED
-tests/test_validation.py::TestValidation::test_valid_record PASSED
-============================== 20 passed in 3.28s ==============================
+============================== 32 passed in 3.21s ==============================
 ```
 
 ### Step 3: Run the Full End-to-End Pipeline Simulator
-Run live scraping, validation, transformation, deduplication, and simulated cloud storage:
+The pipeline simulator [`pipeline_runner.py`](pipeline_runner.py) mirrors Step Functions execution semantics:
 
 ```bash
-# Test Books Scraper
+# 1. Run live scraping for Books to Scrape
 python pipeline_runner.py --site books_toscrape
 
-# Test Quotes Scraper
+# 2. Run live scraping for Quotes to Scrape
 python pipeline_runner.py --site quotes_toscrape
+
+# 3. Run multi-site batch scraping across all configured sites
+python pipeline_runner.py --all
+
+# 4. Run with controlled offline HTML test fixture (zero internet requirement)
+python pipeline_runner.py --fixture
+
+# 5. Run controlled failure simulation (demonstrates SQS DLQ & SNS alerting)
+python pipeline_runner.py --simulate-failure
 ```
 
-**Sample Output:**
+### Step 4: Package Lambda Artifacts
+To package the Lambda functions and production dependencies into a self-contained deployable zip:
+```bash
+python scripts/package_lambdas.py
 ```
-======================================================================
-[RUN] INITIATING THE CLOUD SCRAPER PIPELINE: [books_toscrape]
-======================================================================
-
-[State 1/5] Executing Scraper Lambda...
-  [OK] Scraped 20 records from https://books.toscrape.com/catalogue/page-1.html
-
-[State 2/5] Executing Validation Lambda...
-  [OK] Validated records: 20 valid, 0 invalid
-
-[State 3/5] Executing Transformation & Deduplication Lambda...
-  [OK] Transformed records: 20 unique, 0 duplicates removed
-
-[State 4/5] Executing Cloud Storage Lambda (DynamoDB & S3)...
-  [OK] Storage status: Stored 20 records (DynamoDB: 0, S3: N/A)
-
-[State 5/5] Executing Notification & FinOps Telemetry Lambda...
-  [OK] Notification summary: The Cloud Scraper: [SUCCESS] books_toscrape (20 records)
-  [OK] Estimated run cost: $0.000199 USD
-
-======================================================================
-[SUCCESS] PIPELINE EXECUTION COMPLETED SUCCESSFULLY IN 4.64s
-======================================================================
-```
+This builds `build/the-cloud-scraper-lambda.zip` (~1.47 MB) containing all dependencies (`requests`, `beautifulsoup4`, `urllib3`, etc.) ready for deployment.
 
 ---
 

@@ -3,6 +3,9 @@ The Cloud Scraper - Job Dispatcher Lambda Function
 Accepts scheduled events from Amazon EventBridge, on-demand REST API requests
 from Amazon API Gateway, or batch messages from Amazon SQS, and initiates
 AWS Step Functions State Machine executions.
+
+When multiple sites are scheduled, optionally distributes individual site jobs
+to an Amazon SQS queue for decoupled execution and throttling.
 """
 
 import os
@@ -17,6 +20,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "us-east-1"))
+
+
+def is_running_in_aws() -> bool:
+    """Detect whether code is running inside an active AWS Lambda execution environment."""
+    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_EXECUTION_ENV"))
 
 
 def get_enabled_sites() -> list:
@@ -90,6 +98,28 @@ def parse_incoming_event(event: dict) -> list:
     return jobs
 
 
+def enqueue_job_to_sqs(queue_url: str, job_input: dict) -> dict:
+    """Enqueue a scraping job into the Amazon SQS Job Queue."""
+    if not queue_url:
+        return {"status": "SKIPPED", "message": "No SQS Queue URL provided"}
+
+    try:
+        sqs_client = boto3.client("sqs", region_name=DEFAULT_REGION)
+        resp = sqs_client.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(job_input),
+        )
+        logger.info("Enqueued job to SQS: %s (MessageId=%s)", job_input.get("site_id"), resp.get("MessageId"))
+        return {
+            "status": "ENQUEUED",
+            "messageId": resp.get("MessageId"),
+            "site_id": job_input.get("site_id"),
+        }
+    except Exception as e:
+        logger.warning("Could not enqueue job to SQS: %s", str(e))
+        return {"status": "FAILED", "error": str(e), "site_id": job_input.get("site_id")}
+
+
 def start_state_machine_execution(state_machine_arn: str, job_input: dict) -> dict:
     """Start an execution of the Step Functions State Machine."""
     execution_name = f"scrape-{job_input['site_id']}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
@@ -120,7 +150,7 @@ def start_state_machine_execution(state_machine_arn: str, job_input: dict) -> di
             "status": "RUNNING",
             "input": job_input,
         }
-    except (ClientError, NoCredentialsError, NoRegionError) as e:
+    except Exception as e:
         logger.warning("Could not start Step Functions execution: %s", str(e))
         return {
             "executionArn": "",
@@ -141,17 +171,38 @@ def lambda_handler(event, context=None):
     state_machine_arn = os.environ.get("STEP_FUNC_ARN", "")
     bucket_name = os.environ.get("S3_BUCKET_NAME", "")
     dynamodb_table = os.environ.get("DYNAMODB_TABLE_NAME", "TheCloudScraper-Records")
+    queue_url = os.environ.get("SQS_QUEUE_URL", "")
 
     jobs = parse_incoming_event(event)
-    results = []
 
+    # If triggered by SQS, execute each message directly via Step Functions
+    is_sqs_trigger = "Records" in event and event["Records"] and "s3" not in event["Records"][0]
+
+    # If multiple jobs from a scheduled event and queue_url is set, distribute via SQS
+    if len(jobs) > 1 and queue_url and not is_sqs_trigger:
+        enqueued_results = []
+        for job in jobs:
+            job["bucket_name"] = bucket_name
+            job["dynamodb_table"] = dynamodb_table
+            res = enqueue_job_to_sqs(queue_url, job)
+            enqueued_results.append(res)
+        return {
+            "statusCode": 200,
+            "status": "SUCCESS",
+            "mode": "SQS_DISTRIBUTION",
+            "enqueued_count": len(enqueued_results),
+            "jobs": enqueued_results,
+        }
+
+    # Otherwise, execute Step Functions directly for each job
+    results = []
     for job in jobs:
         job["bucket_name"] = bucket_name
         job["dynamodb_table"] = dynamodb_table
         res = start_state_machine_execution(state_machine_arn, job)
         results.append(res)
 
-    # API Gateway response format if invoked via HTTP
+    # API Gateway response format if invoked via HTTP POST /scrape
     is_api_request = "httpMethod" in event or ("body" in event and "path" in event)
     if is_api_request:
         return {
@@ -172,7 +223,6 @@ def lambda_handler(event, context=None):
 
 
 if __name__ == "__main__":
-    # Test dispatch locally
     test_event = {"site_id": "books_toscrape"}
     res = lambda_handler(test_event)
     print("Dispatch result:", json.dumps(res, indent=2))

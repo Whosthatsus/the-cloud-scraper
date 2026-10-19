@@ -2,6 +2,9 @@
 The Cloud Scraper - DynamoDB & S3 Storage Lambda Function
 Persists cleaned, structured records and metadata to Amazon DynamoDB
 and archives transformed JSON dataset into Amazon S3.
+
+Includes conditional writes for deduplication in DynamoDB and distinguishes
+between live AWS execution and local offline development testing.
 """
 
 import os
@@ -16,6 +19,11 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "us-east-1"))
+
+
+def is_running_in_aws() -> bool:
+    """Detect whether code is running inside an active AWS Lambda execution environment."""
+    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_EXECUTION_ENV"))
 
 
 def convert_floats_to_decimals(obj):
@@ -42,11 +50,13 @@ def convert_decimals_to_floats(obj):
 
 def save_transformed_json_to_s3(
     bucket_name: str, site_id: str, timestamp_str: str, records: list, metadata: dict
-) -> str:
-    """Save transformed structured JSON dataset to S3 under transform/ folder."""
+) -> tuple:
+    """
+    Save transformed structured JSON dataset to S3 under transform/ folder.
+    Returns (s3_key, error_message).
+    """
     if not bucket_name:
-        logger.info("No S3 bucket specified. Skipping S3 transformed archive.")
-        return ""
+        return "", None
 
     try:
         s3_client = boto3.client("s3", region_name=DEFAULT_REGION)
@@ -68,38 +78,77 @@ def save_transformed_json_to_s3(
             ServerSideEncryption="AES256",
         )
         logger.info("Archived transformed JSON to s3://%s/%s", bucket_name, s3_key)
-        return s3_key
-    except (ClientError, NoCredentialsError, NoRegionError) as e:
-        logger.warning("Could not upload transformed JSON to S3: %s", str(e))
-        return ""
+        return s3_key, None
+    except Exception as e:
+        if is_running_in_aws():
+            logger.error("AWS S3 put_object failed in production: %s", str(e))
+            return "", f"S3 put_object failed: {str(e)}"
+        else:
+            logger.info("Local offline mode: S3 storage skipped (%s)", str(e))
+            return "", None
 
 
-def store_records_in_dynamodb(table_name: str, records: list) -> int:
+def store_records_in_dynamodb(table_name: str, records: list) -> tuple:
     """
-    Batch store unique records in Amazon DynamoDB.
-    Returns the count of successfully stored records.
+    Store records in Amazon DynamoDB using conditional writes to safeguard
+    against overwriting existing records.
+    Returns (new_stored_count, existing_count, error_message).
     """
     if not table_name:
-        logger.warning("No DynamoDB table name specified.")
-        return 0
+        return 0, 0, "No DynamoDB table name specified."
+
+    new_stored_count = 0
+    existing_count = 0
 
     try:
         dynamodb = boto3.resource("dynamodb", region_name=DEFAULT_REGION)
         table = dynamodb.Table(table_name)
-        stored_count = 0
 
-        with table.batch_writer() as batch:
-            for r in records:
-                # Convert floats to Decimals for DynamoDB
-                item = convert_floats_to_decimals(r)
-                batch.put_item(Item=item)
-                stored_count += 1
+        for r in records:
+            item = convert_floats_to_decimals(r)
+            try:
+                # Conditional write: only put item if record_id does not already exist
+                table.put_item(
+                    Item=item,
+                    ConditionExpression="attribute_not_exists(record_id)",
+                )
+                new_stored_count += 1
+            except ClientError as ce:
+                error_code = ce.response.get("Error", {}).get("Code", "")
+                if error_code == "ConditionalCheckFailedException":
+                    # Item already exists in table; duplicate prevented
+                    existing_count += 1
+                    logger.debug("Record already exists in DynamoDB: %s", r.get("record_id"))
+                else:
+                    # Genuine AWS ClientError (e.g. AccessDenied, ResourceNotFound)
+                    if is_running_in_aws():
+                        logger.error("DynamoDB put_item ClientError in AWS: %s", str(ce))
+                        return new_stored_count, existing_count, f"DynamoDB error: {str(ce)}"
+                    else:
+                        logger.warning("Local test ClientError: %s", str(ce))
 
-        logger.info("Successfully stored %d records in DynamoDB table %s", stored_count, table_name)
-        return stored_count
-    except (ClientError, NoCredentialsError, NoRegionError) as e:
-        logger.warning("DynamoDB storage skipped or failed (dry-run/credentials required): %s", str(e))
-        return 0
+        logger.info(
+            "DynamoDB storage summary: %d new inserted, %d already existing in table %s",
+            new_stored_count,
+            existing_count,
+            table_name,
+        )
+        return new_stored_count, existing_count, None
+
+    except (NoCredentialsError, NoRegionError) as nce:
+        if is_running_in_aws():
+            logger.error("Missing AWS credentials in Lambda execution environment: %s", str(nce))
+            return 0, 0, f"Credentials error in AWS: {str(nce)}"
+        else:
+            logger.info("Local offline mode: DynamoDB storage simulated (%s)", str(nce))
+            return 0, 0, None
+    except Exception as e:
+        if is_running_in_aws():
+            logger.error("Unexpected error storing records in DynamoDB: %s", str(e))
+            return new_stored_count, existing_count, str(e)
+        else:
+            logger.info("Local offline mode: %s", str(e))
+            return 0, 0, None
 
 
 def lambda_handler(event, context=None):
@@ -132,25 +181,39 @@ def lambda_handler(event, context=None):
     }
 
     # 1. Save transformed JSON in S3
-    transformed_s3_key = ""
-    if bucket_name:
-        transformed_s3_key = save_transformed_json_to_s3(
-            bucket_name=bucket_name,
-            site_id=site_id,
-            timestamp_str=timestamp_folder,
-            records=records,
-            metadata=metadata,
-        )
+    transformed_s3_key, s3_error = save_transformed_json_to_s3(
+        bucket_name=bucket_name,
+        site_id=site_id,
+        timestamp_str=timestamp_folder,
+        records=records,
+        metadata=metadata,
+    )
 
-    # 2. Store records in DynamoDB
-    stored_count = 0
-    if records and table_name:
-        stored_count = store_records_in_dynamodb(table_name, records)
+    # 2. Store records in DynamoDB with conditional write deduplication
+    new_stored, existing_found, ddb_error = store_records_in_dynamodb(table_name, records)
+
+    # In AWS production, if an error occurred, fail the state so Step Functions catches it
+    if is_running_in_aws() and (s3_error or ddb_error):
+        error_msg = "; ".join(filter(None, [s3_error, ddb_error]))
+        logger.error("Production storage failed: %s", error_msg)
+        return {
+            "statusCode": 500,
+            "status": "FAILURE",
+            "Storage": "FAILURE",
+            "site_id": site_id,
+            "error": error_msg,
+            "records_stored_dynamodb": new_stored,
+            "existing_records_dynamodb": existing_found,
+        }
+
+    in_aws = is_running_in_aws()
+    storage_mode = "AWS_PRODUCTION" if in_aws else "OFFLINE_LOCAL_MODE"
 
     return {
         "statusCode": 200,
         "status": "SUCCESS",
         "Storage": "SUCCESS",
+        "storage_mode": storage_mode,
         "site_id": site_id,
         "site_name": event.get("site_name", site_id),
         "target_url": target_url,
@@ -159,14 +222,18 @@ def lambda_handler(event, context=None):
         "transformed_s3_key": transformed_s3_key,
         "dynamodb_table": table_name,
         "records_count": len(records),
-        "records_stored_dynamodb": stored_count,
+        "records_stored_dynamodb": new_stored if in_aws else 0,
+        "existing_records_dynamodb": existing_found,
         "duplicates_removed": event.get("duplicates_removed", 0),
-        "summary": f"Stored {len(records)} records (DynamoDB: {stored_count}, S3: {transformed_s3_key or 'N/A'})",
+        "summary": (
+            f"Stored {new_stored} new records in DynamoDB (found {existing_found} existing)"
+            if in_aws
+            else f"Local offline validation: {len(records)} records prepared for DynamoDB"
+        ),
     }
 
 
 if __name__ == "__main__":
-    # Test execution
     sample_records = [
         {
             "record_id": "books_toscrape#abc12345",
@@ -183,7 +250,7 @@ if __name__ == "__main__":
         {
             "site_id": "books_toscrape",
             "records": sample_records,
-            "dynamodb_table": "TestTable",
+            "dynamodb_table": "TheCloudScraper-Records",
         }
     )
     print("Storage result:", json.dumps(res, indent=2))

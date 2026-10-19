@@ -1,7 +1,8 @@
 """
 The Cloud Scraper - Website Scraper Lambda Function
 Extracts structured data from static websites using Requests and BeautifulSoup.
-Supports configurable extraction rules and archives raw HTML to Amazon S3.
+Supports configurable extraction rules, robots.txt compliance checking,
+and archives raw HTML to Amazon S3.
 """
 
 import os
@@ -9,7 +10,8 @@ import json
 import time
 import logging
 from datetime import datetime, timezone
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 import requests
 from bs4 import BeautifulSoup
 import boto3
@@ -22,6 +24,35 @@ DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION
 DEFAULT_USER_AGENT = (
     "TheCloudScraper/1.0 (+https://github.com/aws-samples/the-cloud-scraper; CAD-Course-Project)"
 )
+
+
+def is_running_in_aws() -> bool:
+    """Detect whether code is running inside an active AWS Lambda execution environment."""
+    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_EXECUTION_ENV"))
+
+
+def check_robots_allowed(base_url: str, target_url: str, user_agent: str = DEFAULT_USER_AGENT) -> bool:
+    """
+    Check if target URL access is permitted by site's robots.txt.
+    Returns True if allowed or if robots.txt is unavailable/not present.
+    """
+    try:
+        parsed_base = urlparse(base_url)
+        robots_url = f"{parsed_base.scheme}://{parsed_base.netloc}/robots.txt"
+        rp = RobotFileParser()
+        rp.set_url(robots_url)
+        # Fast timeout for robots.txt check (3 seconds)
+        resp = requests.get(robots_url, headers={"User-Agent": user_agent}, timeout=3)
+        if resp.status_code == 200:
+            rp.parse(resp.text.splitlines())
+            return rp.can_fetch(user_agent, target_url)
+        elif resp.status_code in (404, 410):
+            # No robots.txt means all paths permitted
+            return True
+        return True
+    except Exception as e:
+        logger.debug("Robots.txt check skipped or timed out (%s): defaulting to allow", str(e))
+        return True
 
 
 def load_site_config(site_id: str, config_override: dict = None) -> dict:
@@ -122,11 +153,13 @@ def parse_html_records(html_content: str, site_config: dict) -> list:
 
 def save_raw_snapshot_to_s3(
     bucket_name: str, site_id: str, timestamp_str: str, html_content: str, metadata: dict
-) -> str:
-    """Persist raw HTML snapshot and audit metadata to Amazon S3."""
+) -> tuple:
+    """
+    Persist raw HTML snapshot and audit metadata to Amazon S3.
+    Returns (html_key, error_message).
+    """
     if not bucket_name:
-        logger.warning("No S3 bucket specified. Skipping raw HTML snapshot save.")
-        return ""
+        return "", None
 
     try:
         s3_client = boto3.client("s3", region_name=DEFAULT_REGION)
@@ -148,16 +181,20 @@ def save_raw_snapshot_to_s3(
             ServerSideEncryption="AES256",
         )
         logger.info("Archived raw HTML to s3://%s/%s", bucket_name, html_key)
-        return html_key
-    except (ClientError, NoCredentialsError, NoRegionError) as e:
-        logger.warning("Could not archive raw HTML to S3 (dry-run/credentials required): %s", str(e))
-        return ""
+        return html_key, None
+    except Exception as e:
+        if is_running_in_aws():
+            logger.error("AWS S3 put_object for raw snapshot failed: %s", str(e))
+            return "", f"S3 snapshot save failed: {str(e)}"
+        else:
+            logger.info("Local offline mode: Raw HTML S3 snapshot skipped (%s)", str(e))
+            return "", None
 
 
 def lambda_handler(event, context=None):
     """
     Lambda Handler for Website Scraping.
-    Receives site_id and optional target_url override.
+    Receives site_id and optional target_url override or mock_html for testing.
     Scrapes the target, stores raw HTML to S3, and returns records.
     """
     logger.info("Received scraper event: %s", json.dumps(event))
@@ -177,25 +214,46 @@ def lambda_handler(event, context=None):
         }
 
     target_url = event.get("target_url") or site_config.get("target_url")
+    base_url = site_config.get("base_url", target_url)
     timeout = int(site_config.get("timeout_seconds", 15))
     timestamp = datetime.now(timezone.utc).isoformat()
     timestamp_folder = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-    try:
-        response = fetch_page_content(target_url, timeout=timeout)
-        html_content = response.text
-        http_status = response.status_code
-    except requests.exceptions.RequestException as e:
-        logger.error("Scraping request failed for URL %s: %s", target_url, str(e))
-        return {
-            "statusCode": 502,
-            "status": "FAILURE",
-            "site_id": site_id,
-            "target_url": target_url,
-            "scraped_at": timestamp,
-            "error": f"HTTP request failed: {str(e)}",
-            "is_retryable": True,
-        }
+    # Support deterministic local fixture testing via event parameter 'mock_html'
+    mock_html = event.get("mock_html")
+
+    if mock_html:
+        html_content = mock_html
+        http_status = 200
+        logger.info("Using provided mock_html fixture (%d bytes)", len(html_content))
+    else:
+        # Check robots.txt compliance before fetching
+        if not check_robots_allowed(base_url, target_url):
+            logger.warning("Scraping disallowed by robots.txt for URL: %s", target_url)
+            return {
+                "statusCode": 403,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "error": "Scraping disallowed by target website robots.txt policy.",
+                "is_retryable": False,
+            }
+
+        try:
+            response = fetch_page_content(target_url, timeout=timeout)
+            html_content = response.text
+            http_status = response.status_code
+        except requests.exceptions.RequestException as e:
+            logger.error("Scraping request failed for URL %s: %s", target_url, str(e))
+            return {
+                "statusCode": 502,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "scraped_at": timestamp,
+                "error": f"HTTP request failed: {str(e)}",
+                "is_retryable": True,
+            }
 
     records = parse_html_records(html_content, site_config)
 
@@ -208,15 +266,25 @@ def lambda_handler(event, context=None):
         "response_bytes": len(html_content.encode("utf-8")),
     }
 
-    raw_s3_key = ""
+    raw_s3_key, s3_err = "", None
     if bucket_name:
-        raw_s3_key = save_raw_snapshot_to_s3(
+        raw_s3_key, s3_err = save_raw_snapshot_to_s3(
             bucket_name=bucket_name,
             site_id=site_id,
             timestamp_str=timestamp_folder,
             html_content=html_content,
             metadata=metadata,
         )
+
+    # In production AWS, if S3 snapshot storage fails, report the error
+    if is_running_in_aws() and s3_err:
+        return {
+            "statusCode": 500,
+            "status": "FAILURE",
+            "site_id": site_id,
+            "target_url": target_url,
+            "error": s3_err,
+        }
 
     return {
         "statusCode": 200,
@@ -232,7 +300,6 @@ def lambda_handler(event, context=None):
 
 
 if __name__ == "__main__":
-    # Local test execution
     test_event = {"site_id": "books_toscrape"}
     result = lambda_handler(test_event)
     print(f"Scraped {result.get('records_count', 0)} records from {result.get('site_id')}")
