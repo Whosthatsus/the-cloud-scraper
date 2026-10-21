@@ -132,30 +132,35 @@ the-cloud-scraper/
 
 ---
 
-## 5. Sample Configuration: Permitted Test Websites
+## 5. Sample Configuration: Permitted Test Websites & Open Feeds
 
-Target websites and their extraction rules are configured in [`config/sites_config.json`](config/sites_config.json). The project includes two pre-configured sandbox websites that explicitly permit automated scraping:
+Target websites and their extraction rules are configured declaratively in [`config/sites_config.json`](config/sites_config.json). The project supports 4 pre-configured, tested public sources that permit automated scraping:
 
 ### Target 1: Books to Scrape (`books_toscrape`)
 - **Target URL:** `https://books.toscrape.com/catalogue/page-1.html`
+- **Category:** E-commerce Sandbox
 - **Container Selector:** `article.product_pod`
-- **Extracted Fields:**
-  - `title`: `h3 a` (attribute: `title`)
-  - `price`: `p.price_color` (normalized to `float`, e.g. `51.77`)
-  - `availability`: `p.instock.availability`
-  - `rating`: `p.star-rating` (attribute: `class`, converted to integer `1–5`)
-  - `detail_link`: `h3 a` (attribute: `href`, resolved to absolute URL)
-- **Validation Rules:** `required_fields: ["title", "price", "detail_link"]`
+- **Extracted Fields:** `title`, `price` (normalized float GBP), `availability`, `rating` (1–5 int), `detail_link`
+- **Pagination Support:** Next page followed via `li.next a` up to configured `page_limit`.
 
 ### Target 2: Quotes to Scrape (`quotes_toscrape`)
 - **Target URL:** `https://quotes.toscrape.com/`
+- **Category:** Quotations & Authors Sandbox
 - **Container Selector:** `div.quote`
-- **Extracted Fields:**
-  - `quote`: `span.text`
-  - `author`: `small.author`
-  - `author_url`: `span a` (attribute: `href`)
-  - `tags`: `div.tags a.tag` (extracted as list of strings)
-- **Validation Rules:** `required_fields: ["quote", "author"]`, `min_quote_length: 5`
+- **Extracted Fields:** `quote`, `author`, `author_url`, `tags` (string array)
+- **Pagination Support:** Next page followed via `li.next a`.
+
+### Target 3: WebScraper Laptops Sandbox (`webscraper_laptops`)
+- **Target URL:** `https://webscraper.io/test-sites/e-commerce/allinone/computers/laptops`
+- **Category:** Dedicated Scraper Testing Sandbox (117 test products)
+- **Container Selector:** `div.product-wrapper`
+- **Extracted Fields:** `title`, `price` (normalized float USD), `description`, `rating` (data-rating integer), `reviews` count, `detail_link`.
+
+### Target 4: Hacker News Permitted Feed (`hacker_news`)
+- **Target URL:** `https://news.ycombinator.com/`
+- **Category:** Tech News & Aggregator (Robots.txt permitted for frontpage index)
+- **Container Selector:** `tr.athing`
+- **Extracted Fields:** `rank` (integer rank), `title`, `detail_link`.
 
 ---
 
@@ -168,7 +173,7 @@ You can verify the entire pipeline locally without requiring active AWS credenti
 pip install -r requirements.txt
 ```
 
-### Step 2: Launch the Interactive Web Dashboard (Zero-Cost Demonstration)
+### Step 2: Launch the Upgraded Web Dashboard
 Launch the lightweight zero-dependency local web dashboard to demonstrate the full application (frontend + backend pipeline) to your teacher without incurring any AWS charges:
 
 ```bash
@@ -176,21 +181,26 @@ python server.py
 ```
 Open **[http://localhost:8000](http://localhost:8000)** in your web browser.
 
-**Features of the Demonstration Dashboard:**
-- **System Architecture Visualizer:** Interactive flow diagram illustrating the 8-step serverless pipeline.
-- **Target Website Selector:** Select between *Books to Scrape* (e-commerce HTML) and *Quotes to Scrape* (quotes & authors).
-- **Execution Source Modes:** Switch seamlessly between **Live Web Scraping** (real HTTP) and **Offline Controlled Fixtures** (zero internet requirement).
-- **Interactive Scrape Trigger:** Click **"Scrape Now"** to execute the pipeline, observing real-time state progress.
-- **Step Functions State Machine Tracker:** Live visual rendering of each execution phase (*Event Dispatch -> Lambda Scraper -> Validation -> Transformation -> Storage -> Telemetry*).
+**Key Dashboard Features:**
+- **Sidebar Navigation:** Clean dark-navy layout with 6 views (*Overview*, *Scrape Workspace*, *Results & Data*, *Execution History*, *Storage & Lineage*, *Step Functions ETL*).
+- **Executive Overview:** Aggregated statistics across all historical runs (*Total Scraped, Valid Records, Duplicates Filtered, Clean Entities, Success/Fail Ratio, Latest Latency*).
+- **Scrape Workspace:** Source selector across 4 feeds, custom URL field with strict SSRF guardrails, configurable page limits (1–5) and timeouts (3–30s).
+- **Results Table:** Sortable columns (click any column header to sort ascending/descending), live text search filter, configurable items-per-page (10, 25, 50, All), and pagination controls.
+- **Dual Export:** Download datasets directly as **RFC 4180 CSV** or **Standardized JSON** with one click.
+- **Execution History:** Persisted audit log saved in `output/history.json` with direct "View" actions to inspect past runs.
+- **SSRF & Network Security:** Strictly blocks internal hosts (`localhost`, `127.0.0.1`), RFC 1918 private subnets, non-standard ports, and cloud metadata service (`169.254.169.254`).
 - **Fault-Tolerance Verification:** Click **"Test Fault Tolerance"** to simulate upstream network failure, verifying that Step Functions' Catch Block isolates the failure, diverts to the **SQS Dead Letter Queue (DLQ)**, and triggers the **SNS Alarm**.
-- **Live Results Table:** Interactive, searchable data table displaying scraped entities, prices, ratings, and SHA-256 fingerprint hashes.
 - **Dual-Tier Storage Panel:** Disambiguates active local JSON storage (`output/<site_id>.json`) from cloud AWS targets (S3/DynamoDB), ensuring strict zero-cost transparency.
-- **JSON Export & Download:** One-click instant download of the sanitized dataset directly to your local machine.
 
 ### Step 3: Run the Automated Test Suite (PyTest)
-Execute all 32 unit and integration tests across all pipeline modules:
+Execute all 41 unit and integration tests across all pipeline modules and security checks:
 ```bash
 pytest -v tests/
+```
+
+**Expected Result:**
+```
+============================== 41 passed in 5.24s ==============================
 ```
 
 ### Step 4: Run the CLI Pipeline Simulator
@@ -203,11 +213,20 @@ python pipeline_runner.py --site books_toscrape
 # 2. Run live scraping for Quotes to Scrape
 python pipeline_runner.py --site quotes_toscrape
 
-# 3. Run multi-site batch scraping across all configured sites
+# 3. Run live scraping for WebScraper Laptops (117 items)
+python pipeline_runner.py --site webscraper_laptops
+
+# 4. Run live scraping for Hacker News
+python pipeline_runner.py --site hacker_news
+
+# 5. Run multi-site batch scraping across all configured sites
 python pipeline_runner.py --all
 
-# 4. Run with controlled offline HTML test fixture (zero internet requirement)
+# 6. Run with controlled offline HTML test fixture (zero internet requirement)
 python pipeline_runner.py --fixture
+
+# 7. Run controlled failure simulation (demonstrates SQS DLQ & SNS alerting)
+python pipeline_runner.py --simulate-failure
 
 # 5. Run controlled failure simulation (demonstrates SQS DLQ & SNS alerting)
 python pipeline_runner.py --simulate-failure
