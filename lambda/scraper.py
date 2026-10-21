@@ -2,12 +2,14 @@
 The Cloud Scraper - Website Scraper Lambda Function
 Extracts structured data from static websites using Requests and BeautifulSoup.
 Supports configurable extraction rules, robots.txt compliance checking,
-and archives raw HTML to Amazon S3.
+multi-page pagination, strict SSRF/network security validation, and archives raw HTML to Amazon S3.
 """
 
 import os
 import json
 import time
+import socket
+import ipaddress
 import logging
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
@@ -25,10 +27,80 @@ DEFAULT_USER_AGENT = (
     "TheCloudScraper/1.0 (+https://github.com/aws-samples/the-cloud-scraper; CAD-Course-Project)"
 )
 
+# SSRF Protection: Blocked hostnames and IP ranges
+FORBIDDEN_HOSTNAMES = {"localhost", "metadata", "instance-data"}
+BLOCKED_IP_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),      # Loopback
+    ipaddress.ip_network("10.0.0.0/8"),       # RFC1918 Private Class A
+    ipaddress.ip_network("172.16.0.0/12"),    # RFC1918 Private Class B
+    ipaddress.ip_network("192.168.0.0/16"),   # RFC1918 Private Class C
+    ipaddress.ip_network("169.254.0.0/16"),   # Link-Local / AWS Metadata (169.254.169.254)
+    ipaddress.ip_network("0.0.0.0/8"),        # Current network
+    ipaddress.ip_network("::1/128"),          # IPv6 Loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 Unique Local Address
+    ipaddress.ip_network("fe80::/10"),        # IPv6 Link-Local
+]
+
 
 def is_running_in_aws() -> bool:
     """Detect whether code is running inside an active AWS Lambda execution environment."""
     return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_EXECUTION_ENV"))
+
+
+def validate_target_url_security(url: str) -> tuple:
+    """
+    Validate target URL to prevent SSRF, private network probing, and cloud metadata access.
+    Returns (is_safe: bool, error_message: str).
+    """
+    if not url or not isinstance(url, str):
+        return False, "Target URL must be a non-empty string."
+
+    url = url.strip()
+    try:
+        parsed = urlparse(url)
+    except Exception as e:
+        return False, f"Malformed URL: {str(e)}"
+
+    # 1. Enforce standard HTTP/HTTPS schemes only
+    if parsed.scheme not in ("http", "https"):
+        return False, f"Unsupported URL scheme '{parsed.scheme}'. Only http and https protocols are permitted."
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "URL does not contain a valid hostname."
+
+    hostname_lower = hostname.lower()
+
+    # 2. Block forbidden hostnames
+    if hostname_lower in FORBIDDEN_HOSTNAMES or hostname_lower.endswith(".local") or hostname_lower.endswith(".internal"):
+        return False, f"Access to internal or loopback hostname '{hostname}' is blocked for security."
+
+    # 3. Disallow dangerous non-web ports
+    if parsed.port and parsed.port not in (80, 443, 8080):
+        return False, f"Access to port {parsed.port} is not permitted. Only standard web ports (80, 443) are allowed."
+
+    # 4. Check if hostname is a raw IP literal or resolves to private/metadata IP
+    try:
+        ip_obj = ipaddress.ip_address(hostname_lower)
+        for net in BLOCKED_IP_NETWORKS:
+            if ip_obj in net:
+                return False, f"Direct access to private or restricted IP address ({hostname}) is forbidden (SSRF protection)."
+    except ValueError:
+        # Not a raw IP literal, attempt DNS resolution check
+        try:
+            ip_str = socket.gethostbyname(hostname)
+            ip_obj = ipaddress.ip_address(ip_str)
+            for net in BLOCKED_IP_NETWORKS:
+                if ip_obj in net:
+                    return False, f"Target hostname '{hostname}' resolves to private/restricted IP ({ip_str}). Request blocked for SSRF prevention."
+        except socket.gaierror:
+            # Unresolvable hostname in real DNS: block if it looks like loopback
+            if hostname_lower in ("localhost", "127.0.0.1", "0.0.0.0"):
+                return False, f"Access to '{hostname}' is blocked."
+        except Exception as e:
+            logger.debug("DNS check skipped for %s: %s", hostname, str(e))
+
+    return True, ""
 
 
 def check_robots_allowed(base_url: str, target_url: str, user_agent: str = DEFAULT_USER_AGENT) -> bool:
@@ -117,16 +189,20 @@ def extract_field_value(container, field_config: dict, base_url: str):
         if not element:
             return None
 
+    val = None
     if attribute:
         if attribute == "class" and isinstance(element.get("class"), list):
             val = " ".join(element.get("class"))
         else:
             val = element.get(attribute)
+        # If attribute was empty or missing on element, fallback to text content
+        if not val:
+            val = element.get_text(strip=True)
     else:
         val = element.get_text(strip=True)
 
     if val and field_config.get("type") == "url":
-        val = urljoin(base_url, val.strip())
+        val = urljoin(base_url, str(val).strip())
 
     return val
 
@@ -194,8 +270,8 @@ def save_raw_snapshot_to_s3(
 def lambda_handler(event, context=None):
     """
     Lambda Handler for Website Scraping.
-    Receives site_id and optional target_url override or mock_html for testing.
-    Scrapes the target, stores raw HTML to S3, and returns records.
+    Receives site_id, optional target_url override, page_limit, timeout_seconds, or mock_html.
+    Scrapes the target(s), enforces robots.txt and SSRF security, stores raw HTML to S3, and returns records.
     """
     logger.info("Received scraper event: %s", json.dumps(event))
 
@@ -215,19 +291,61 @@ def lambda_handler(event, context=None):
 
     target_url = event.get("target_url") or site_config.get("target_url")
     base_url = site_config.get("base_url", target_url)
-    timeout = int(site_config.get("timeout_seconds", 15))
+
+    # Validate timeout with safe bounds (3 to 30 seconds)
+    try:
+        requested_timeout = int(event.get("timeout_seconds", site_config.get("timeout_seconds", 15)))
+        timeout = min(max(requested_timeout, 3), 30)
+    except (ValueError, TypeError):
+        timeout = 15
+
+    # Validate page limit with safe bounds (1 to 5 pages)
+    try:
+        requested_pages = int(event.get("page_limit", 1))
+        page_limit = min(max(requested_pages, 1), 5)
+    except (ValueError, TypeError):
+        page_limit = 1
+
+    rate_limit_delay = float(site_config.get("rate_limit_delay_seconds", 1.0))
     timestamp = datetime.now(timezone.utc).isoformat()
     timestamp_folder = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     # Support deterministic local fixture testing via event parameter 'mock_html'
     mock_html = event.get("mock_html")
 
+    if event.get("simulate_failure"):
+        logger.info("Simulated network fault requested by test harness")
+        return {
+            "statusCode": 502,
+            "status": "FAILURE",
+            "site_id": site_id,
+            "target_url": target_url,
+            "scraped_at": timestamp,
+            "error": "HTTP connection timed out / target host unreachable (Simulated Network Fault)",
+            "is_retryable": True,
+        }
+
     if mock_html:
         html_content = mock_html
         http_status = 200
         logger.info("Using provided mock_html fixture (%d bytes)", len(html_content))
+        records = parse_html_records(html_content, site_config)
+        pages_scraped = 1
     else:
-        # Check robots.txt compliance before fetching
+        # 1. Enforce strict SSRF & URL security validation
+        is_safe, sec_err = validate_target_url_security(target_url)
+        if not is_safe:
+            logger.warning("SSRF/Security validation failed for URL: %s (%s)", target_url, sec_err)
+            return {
+                "statusCode": 400,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "error": f"Security validation rejected target URL: {sec_err}",
+                "is_retryable": False,
+            }
+
+        # 2. Check robots.txt compliance before fetching
         if not check_robots_allowed(base_url, target_url):
             logger.warning("Scraping disallowed by robots.txt for URL: %s", target_url)
             return {
@@ -239,6 +357,7 @@ def lambda_handler(event, context=None):
                 "is_retryable": False,
             }
 
+        # 3. Fetch initial page
         try:
             response = fetch_page_content(target_url, timeout=timeout)
             html_content = response.text
@@ -255,7 +374,42 @@ def lambda_handler(event, context=None):
                 "is_retryable": True,
             }
 
-    records = parse_html_records(html_content, site_config)
+        records = parse_html_records(html_content, site_config)
+        pages_scraped = 1
+
+        # 4. Multi-page pagination loop (if page_limit > 1 and next_page_selector defined)
+        next_page_sel = site_config.get("next_page_selector")
+        current_url = target_url
+        current_soup = BeautifulSoup(html_content, "html.parser")
+
+        while pages_scraped < page_limit and next_page_sel:
+            next_link_el = current_soup.select_one(next_page_sel)
+            if not next_link_el or not next_link_el.get("href"):
+                logger.info("No further pages found via next_page_selector '%s'", next_page_sel)
+                break
+
+            next_url = urljoin(current_url, next_link_el["href"].strip())
+
+            # Validate security & robots.txt on paginated URL
+            is_next_safe, _ = validate_target_url_security(next_url)
+            if not is_next_safe or not check_robots_allowed(base_url, next_url):
+                logger.warning("Pagination stopped: next URL failed security or robots.txt check: %s", next_url)
+                break
+
+            # Polite delay between page requests
+            time.sleep(rate_limit_delay)
+
+            try:
+                next_resp = fetch_page_content(next_url, timeout=timeout)
+                next_records = parse_html_records(next_resp.text, site_config)
+                records.extend(next_records)
+                pages_scraped += 1
+                current_url = next_url
+                current_soup = BeautifulSoup(next_resp.text, "html.parser")
+                logger.info("Paginated to page %d: +%d records from %s", pages_scraped, len(next_records), next_url)
+            except Exception as e:
+                logger.warning("Pagination fetch failed for page %d (%s): %s", pages_scraped + 1, next_url, str(e))
+                break
 
     metadata = {
         "site_id": site_id,
@@ -263,6 +417,7 @@ def lambda_handler(event, context=None):
         "scraped_at": timestamp,
         "http_status": http_status,
         "records_count": len(records),
+        "pages_scraped": pages_scraped,
         "response_bytes": len(html_content.encode("utf-8")),
     }
 
@@ -295,6 +450,7 @@ def lambda_handler(event, context=None):
         "scraped_at": timestamp,
         "raw_s3_key": raw_s3_key,
         "records_count": len(records),
+        "pages_scraped": pages_scraped,
         "records": records,
     }
 

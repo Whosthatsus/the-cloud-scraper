@@ -4,6 +4,7 @@ Simulates the AWS Step Functions State Machine workflow locally,
 executing: Scrape -> Validate -> Transform/Deduplicate -> Store -> Notify.
 
 Supports live web scraping, offline controlled fixtures, multi-site runs,
+pagination, SSRF security validation, execution history tracking,
 and controlled failure simulation for fault-tolerance demonstration.
 """
 
@@ -11,6 +12,7 @@ import os
 import sys
 import json
 import time
+import uuid
 import argparse
 from datetime import datetime, timezone
 
@@ -30,6 +32,8 @@ transform_handler = transformation.lambda_handler
 store_handler = dynamodb_store.lambda_handler
 notification_handler = notification.lambda_handler
 dispatcher_handler = start_step_function.lambda_handler
+
+HISTORY_FILE = os.path.join(os.path.dirname(__file__), "output", "history.json")
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -73,21 +77,62 @@ OFFLINE_HTML_FIXTURE = """
 """
 
 
+def record_execution_history(entry: dict):
+    """Persist execution entry into output/history.json (keeps most recent 50 runs)."""
+    try:
+        out_dir = os.path.dirname(HISTORY_FILE)
+        os.makedirs(out_dir, exist_ok=True)
+        history = []
+        if os.path.exists(HISTORY_FILE):
+            try:
+                with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                    history = json.load(f)
+                if not isinstance(history, list):
+                    history = []
+            except Exception:
+                history = []
+        history.insert(0, entry)
+        history = history[:50]
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Warning: Could not save execution history: {e}")
+
+
+def get_execution_history() -> list:
+    """Read persisted execution history list from output/history.json."""
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, list) else []
+        except Exception:
+            return []
+    return []
+
+
 def run_pipeline(
     site_id: str,
     bucket_name: str = "",
     table_name: str = "TheCloudScraper-Records",
     use_fixture: bool = False,
     simulate_failure: bool = False,
+    custom_url: str = None,
+    page_limit: int = 1,
+    timeout_seconds: int = 15,
 ) -> dict:
     """
     Execute the entire serverless pipeline for a given site_id in sequence,
     mirroring AWS Step Functions execution semantics.
     """
     start_time = time.time()
+    exec_id = f"exec-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    now_iso = datetime.now(timezone.utc).isoformat()
     mode_tag = "OFFLINE FIXTURE" if use_fixture else ("FAILURE SIMULATION" if simulate_failure else "LIVE SCRAPING")
+
     print("\n" + "=" * 70)
     print(f"[RUN] INITIATING THE CLOUD SCRAPER PIPELINE: [{site_id}] ({mode_tag})")
+    print(f"[EXECUTION ID] {exec_id}")
     print("=" * 70)
 
     # State 1: Scrape
@@ -95,13 +140,18 @@ def run_pipeline(
     scrape_event = {
         "site_id": site_id,
         "bucket_name": bucket_name,
+        "page_limit": page_limit,
+        "timeout_seconds": timeout_seconds,
     }
+    if custom_url:
+        scrape_event["target_url"] = custom_url
+        print(f"  [INFO] Custom target URL: {custom_url}")
     if use_fixture:
         scrape_event["mock_html"] = OFFLINE_HTML_FIXTURE
         print("  [INFO] Using controlled offline HTML test fixture")
     elif simulate_failure:
-        scrape_event["target_url"] = "http://localhost:59999/non-existent-server"
-        print("  [INFO] Injecting controlled connection failure to test error routing")
+        scrape_event["simulate_failure"] = True
+        print("  [INFO] Injecting controlled network fault to test Step Functions error routing")
 
     scrape_result = scraper_handler(scrape_event)
 
@@ -113,6 +163,7 @@ def run_pipeline(
         elapsed_err = round(time.time() - start_time, 2)
         scrape_result["duration_seconds"] = elapsed_err
         scrape_result["elapsed_seconds"] = elapsed_err
+        scrape_result["execution_id"] = exec_id
         notify_result = notification_handler(scrape_result)
         print(f"  [ALERT] Published failure alarm to Amazon SNS: {notify_result.get('summary')}")
         print("\n" + "=" * 70)
@@ -131,7 +182,7 @@ def run_pipeline(
                 "name": "Event Ingestion & Dispatch",
                 "service": "EventBridge / API Gateway",
                 "status": "COMPLETED",
-                "detail": f"Dispatched scraping job for '{site_id}'",
+                "detail": f"Dispatched scraping job for '{site_id}' ({exec_id})",
             },
             {
                 "id": "scraper",
@@ -160,9 +211,27 @@ def run_pipeline(
         scrape_result["duplicates_removed"] = 0
         scrape_result["transformed"] = 0
         scrape_result["records"] = []
+
+        # Record failure into execution history
+        record_execution_history({
+            "execution_id": exec_id,
+            "timestamp": now_iso,
+            "site_id": site_id,
+            "target_url": scrape_result.get("target_url", custom_url or site_id),
+            "mode": mode_tag,
+            "status": "FAILURE",
+            "duration": elapsed_err,
+            "scraped": 0,
+            "valid": 0,
+            "duplicates_removed": 0,
+            "transformed": 0,
+            "cost_usd": scrape_result["cost_metrics"].get("estimated_total_usd", 0.0),
+            "error": scrape_result.get("error", "Execution failed"),
+        })
+
         return scrape_result
 
-    print(f"  [OK] Scraped {scrape_result.get('records_count')} records from {scrape_result.get('target_url')}")
+    print(f"  [OK] Scraped {scrape_result.get('records_count')} records (Pages: {scrape_result.get('pages_scraped', 1)}) from {scrape_result.get('target_url')}")
 
     # State 2: Validate
     print("\n[State 2/5] Executing Validation Lambda...")
@@ -171,6 +240,7 @@ def run_pipeline(
         print(f"  [ERROR] Validation Failed: {val_result.get('error')}")
         print("  [DLQ] Routing validation failures to ScraperDLQ")
         val_result["duration_seconds"] = time.time() - start_time
+        val_result["execution_id"] = exec_id
         notification_handler(val_result)
         return val_result
     print(f"  [OK] Validated records: {val_result.get('valid_count')} valid, {val_result.get('invalid_count')} invalid")
@@ -202,11 +272,13 @@ def run_pipeline(
     print(f"[SUCCESS] PIPELINE EXECUTION COMPLETED SUCCESSFULLY IN {elapsed:.2f}s")
     print("=" * 70)
 
-    return {
+    result_payload = {
         "status": "SUCCESS",
+        "execution_id": exec_id,
         "site_id": site_id,
         "elapsed_seconds": round(elapsed, 2),
         "target_url": scrape_result.get("target_url", ""),
+        "pages_scraped": scrape_result.get("pages_scraped", 1),
         "scraped": scrape_result.get("records_count"),
         "raw_records_count": scrape_result.get("records_count", 0),
         "valid": val_result.get("valid_count"),
@@ -222,14 +294,14 @@ def run_pipeline(
                 "name": "Event Ingestion & Dispatch",
                 "service": "EventBridge / API Gateway",
                 "status": "COMPLETED",
-                "detail": f"Dispatched scraping job for '{site_id}'",
+                "detail": f"Dispatched scraping job for '{site_id}' ({exec_id})",
             },
             {
                 "id": "scraper",
                 "name": "Live Web Scraping & Raw Snapshot",
                 "service": "AWS Lambda (Requests + BS4)",
                 "status": "COMPLETED",
-                "detail": f"Scraped {scrape_result.get('records_count')} records from {scrape_result.get('target_url')}",
+                "detail": f"Scraped {scrape_result.get('records_count')} records ({scrape_result.get('pages_scraped', 1)} page(s)) from {scrape_result.get('target_url')}",
             },
             {
                 "id": "validation",
@@ -270,6 +342,25 @@ def run_pipeline(
         },
     }
 
+    # Record success into execution history
+    record_execution_history({
+        "execution_id": exec_id,
+        "timestamp": now_iso,
+        "site_id": site_id,
+        "target_url": scrape_result.get("target_url", ""),
+        "mode": mode_tag,
+        "status": "SUCCESS",
+        "duration": round(elapsed, 2),
+        "scraped": scrape_result.get("records_count", 0),
+        "valid": val_result.get("valid_count", 0),
+        "duplicates_removed": transform_result.get("duplicates_removed", 0),
+        "transformed": transform_result.get("total_transformed", 0),
+        "cost_usd": notify_result["cost_metrics"].get("estimated_total_usd", 0.0),
+        "pages_scraped": scrape_result.get("pages_scraped", 1),
+    })
+
+    return result_payload
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -278,9 +369,12 @@ def main():
     parser.add_argument(
         "--site",
         default="books_toscrape",
-        choices=["books_toscrape", "quotes_toscrape"],
+        choices=["books_toscrape", "quotes_toscrape", "webscraper_laptops", "hacker_news"],
         help="Target site ID to run (default: books_toscrape)",
     )
+    parser.add_argument("--url", default=None, help="Custom target URL override")
+    parser.add_argument("--pages", type=int, default=1, help="Page limit (1-5, default: 1)")
+    parser.add_argument("--timeout", type=int, default=15, help="Request timeout in seconds (3-30, default: 15)")
     parser.add_argument("--all", action="store_true", help="Run pipeline across all configured sites")
     parser.add_argument("--fixture", action="store_true", help="Use controlled offline HTML test fixture")
     parser.add_argument("--simulate-failure", action="store_true", help="Simulate failure to test DLQ & SNS alerting")
@@ -289,10 +383,28 @@ def main():
     args = parser.parse_args()
 
     if args.all:
-        for sid in ["books_toscrape", "quotes_toscrape"]:
-            run_pipeline(sid, args.bucket, args.table, args.fixture, args.simulate_failure)
+        for sid in ["books_toscrape", "quotes_toscrape", "webscraper_laptops", "hacker_news"]:
+            run_pipeline(
+                sid,
+                args.bucket,
+                args.table,
+                args.fixture,
+                args.simulate_failure,
+                args.url,
+                args.pages,
+                args.timeout,
+            )
     else:
-        res = run_pipeline(args.site, args.bucket, args.table, args.fixture, args.simulate_failure)
+        res = run_pipeline(
+            args.site,
+            args.bucket,
+            args.table,
+            args.fixture,
+            args.simulate_failure,
+            args.url,
+            args.pages,
+            args.timeout,
+        )
         if res.get("status") == "SUCCESS" and res.get("sample_record"):
             print("\nSample Transformed Entity (DynamoDB & S3 format):")
             print(json.dumps(res["sample_record"], indent=2))

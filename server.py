@@ -6,6 +6,8 @@ http.server with ZERO extra external dependencies.
 """
 
 import os
+import io
+import csv
 import sys
 import json
 import mimetypes
@@ -22,6 +24,40 @@ import pipeline_runner
 WEB_DIR = os.path.join(PROJECT_ROOT, "web")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "output")
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "sites_config.json")
+
+
+def convert_records_to_csv(records: list) -> str:
+    """Convert list of records into RFC 4180 compliant CSV string."""
+    if not records or not isinstance(records, list):
+        return ""
+    fieldnames = []
+    for r in records:
+        if isinstance(r, dict):
+            for k in r.keys():
+                if k not in fieldnames:
+                    fieldnames.append(k)
+
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=fieldnames,
+        quoting=csv.QUOTE_MINIMAL,
+        lineterminator="\r\n",
+    )
+    writer.writeheader()
+    for r in records:
+        if isinstance(r, dict):
+            row = {}
+            for k in fieldnames:
+                v = r.get(k)
+                if isinstance(v, list):
+                    row[k] = "; ".join(str(item) for item in v)
+                elif v is None:
+                    row[k] = ""
+                else:
+                    row[k] = str(v)
+            writer.writerow(row)
+    return output.getvalue()
 
 
 class CloudScraperRequestHandler(BaseHTTPRequestHandler):
@@ -70,6 +106,7 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+        query = parse_qs(parsed.query)
         if not path:
             path = "/"
 
@@ -99,19 +136,66 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # 3. API: Download JSON file
-        if path.startswith("/api/download/"):
-            site_id = path.replace("/api/download/", "").strip()
-            # Clean path to prevent path traversal
-            safe_site_id = "".join(c for c in site_id if c.isalnum() or c in ("_", "-"))
-            json_file = os.path.join(OUTPUT_DIR, f"{safe_site_id}.json")
-            if os.path.exists(json_file):
-                self._serve_file(json_file, content_type="application/json", as_attachment=True, filename=f"{safe_site_id}.json")
-            else:
-                self._send_json(404, {"error": f"No stored JSON data found for '{safe_site_id}'. Run a scrape first."})
+        # 3. API: Real Execution History & Aggregates
+        if path == "/api/history":
+            history = pipeline_runner.get_execution_history()
+            total_scraped = sum(h.get("scraped", 0) for h in history)
+            total_valid = sum(h.get("valid", 0) for h in history)
+            total_duplicates = sum(h.get("duplicates_removed", 0) for h in history)
+            total_transformed = sum(h.get("transformed", 0) for h in history)
+            successful_runs = sum(1 for h in history if h.get("status") == "SUCCESS")
+            failed_runs = sum(1 for h in history if h.get("status") == "FAILURE")
+            latest_duration = history[0].get("duration", 0.0) if history else 0.0
+
+            self._send_json(200, {
+                "status": "SUCCESS",
+                "summary": {
+                    "total_scraped": total_scraped,
+                    "total_valid": total_valid,
+                    "total_duplicates_removed": total_duplicates,
+                    "total_transformed": total_transformed,
+                    "successful_runs": successful_runs,
+                    "failed_runs": failed_runs,
+                    "total_runs": len(history),
+                    "latest_duration": latest_duration,
+                },
+                "history": history,
+            })
             return
 
-        # 4. API: Read stored JSON data
+        # 4. API: Download / Export (JSON or CSV)
+        if path.startswith("/api/download/") or path.startswith("/api/export/"):
+            prefix = "/api/download/" if path.startswith("/api/download/") else "/api/export/"
+            site_id = path.replace(prefix, "").strip()
+            safe_site_id = "".join(c for c in site_id if c.isalnum() or c in ("_", "-"))
+            json_file = os.path.join(OUTPUT_DIR, f"{safe_site_id}.json")
+
+            if not os.path.exists(json_file):
+                self._send_json(404, {"error": f"No stored data found for '{safe_site_id}'. Run a scrape first."})
+                return
+
+            req_format = query.get("format", ["json"])[0].lower()
+
+            if req_format == "csv":
+                try:
+                    with open(json_file, "r", encoding="utf-8") as f:
+                        records = json.load(f)
+                    csv_text = convert_records_to_csv(records)
+                    csv_bytes = csv_text.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/csv; charset=utf-8")
+                    self.send_header("Content-Disposition", f'attachment; filename="{safe_site_id}.csv"')
+                    self.send_header("Content-Length", str(len(csv_bytes)))
+                    self.end_headers()
+                    self.wfile.write(csv_bytes)
+                except Exception as e:
+                    self._send_json(500, {"error": f"Failed converting to CSV: {str(e)}"})
+                return
+            else:
+                self._serve_file(json_file, content_type="application/json", as_attachment=True, filename=f"{safe_site_id}.json")
+                return
+
+        # 5. API: Read stored JSON data
         if path.startswith("/api/data/"):
             site_id = path.replace("/api/data/", "").strip()
             safe_site_id = "".join(c for c in site_id if c.isalnum() or c in ("_", "-"))
@@ -122,7 +206,7 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(404, {"error": f"No stored JSON data found for '{safe_site_id}'."})
             return
 
-        # 5. Frontend UI: Static assets
+        # 6. Frontend UI: Static assets
         if path in ("/", "/index.html"):
             index_path = os.path.join(WEB_DIR, "index.html")
             self._serve_file(index_path, content_type="text/html")
@@ -153,8 +237,19 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
                 payload = {}
 
             site_id = payload.get("site_id", "books_toscrape")
+            custom_url = payload.get("custom_url")
             use_fixture = bool(payload.get("fixture", False))
             simulate_failure = bool(payload.get("simulate_failure", False))
+
+            try:
+                page_limit = int(payload.get("page_limit", 1))
+            except (ValueError, TypeError):
+                page_limit = 1
+
+            try:
+                timeout_seconds = int(payload.get("timeout_seconds", 15))
+            except (ValueError, TypeError):
+                timeout_seconds = 15
 
             # Run the serverless pipeline locally
             try:
@@ -162,6 +257,9 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
                     site_id=site_id,
                     use_fixture=use_fixture,
                     simulate_failure=simulate_failure,
+                    custom_url=custom_url,
+                    page_limit=page_limit,
+                    timeout_seconds=timeout_seconds,
                 )
                 self._send_json(200, result)
             except Exception as e:
@@ -187,6 +285,7 @@ def run_server(port: int = 8000, host: str = "127.0.0.1"):
     print("=" * 70)
     print(f"  * UI Dashboard:  http://localhost:{port}/")
     print(f"  * REST API:      http://localhost:{port}/api/sites")
+    print(f"  * History API:   http://localhost:{port}/api/history")
     print(f"  * Scrape Route:  POST http://localhost:{port}/api/scrape")
     print(f"  * Zero-Cost Mode: Local server active, no AWS cloud charges incurred.")
     print("=" * 70)
