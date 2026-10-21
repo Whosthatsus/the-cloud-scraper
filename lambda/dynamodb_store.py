@@ -160,6 +160,13 @@ def lambda_handler(event, context=None):
 
     records = event.get("records", [])
     site_id = event.get("site_id", "unknown_site")
+    if not is_running_in_aws():
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{site_id}.json")
+        with open(output_path, "w", encoding="utf-8") as output_file:
+            json.dump(records, output_file, indent=2, ensure_ascii=False)
+        logger.info("Saved %d records locally to %s", len(records), output_path)
     table_name = os.environ.get("DYNAMODB_TABLE_NAME", event.get("dynamodb_table", "TheCloudScraper-Records"))
     bucket_name = os.environ.get("S3_BUCKET_NAME", event.get("bucket_name", ""))
     target_url = event.get("target_url", "")

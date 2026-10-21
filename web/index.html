@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Cloud Scraper — Serverless Automated Data Pipeline</title>
+  <link rel="stylesheet" href="web/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="logo-icon">⚡</div>
+      <div>
+        <h1 class="nav-title">The Cloud Scraper</h1>
+        <p class="nav-subtitle">Serverless Automated Data Pipeline &bull; Cloud Architecture Design (CAD)</p>
+      </div>
+    </div>
+    <div class="nav-badges">
+      <span class="badge badge-purple">AWS Step Functions Pattern</span>
+      <span class="badge badge-green" id="backendStatusBadge">Backend: Checking...</span>
+      <span class="badge badge-blue">Zero-Cost Local Mode</span>
+    </div>
+  </header>
+
+  <main class="main-container">
+
+    <!-- Architecture Accordion -->
+    <section class="card arch-card">
+      <div class="arch-header" id="archToggleBtn">
+        <div class="arch-title-wrap">
+          <span class="section-icon">📐</span>
+          <h2 class="section-title">System Architecture Overview</h2>
+          <span class="badge badge-outline">Serverless ETL Pattern</span>
+        </div>
+        <button class="btn-text" id="archToggleText">Collapse ▲</button>
+      </div>
+      <div class="arch-body" id="archBody">
+        <p class="arch-desc">
+          Automated serverless data harvesting, schema validation, deterministic SHA-256 deduplication, and dual-tier cloud storage orchestration.
+        </p>
+        <div class="pipeline-flow-diagram">
+          <div class="flow-step">
+            <span class="flow-num">1</span>
+            <strong>Event Trigger</strong>
+            <small>EventBridge Cron / API Gateway</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">2</span>
+            <strong>Job Dispatcher</strong>
+            <small>Lambda + SQS Job Queue</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">3</span>
+            <strong>Orchestrator</strong>
+            <small>AWS Step Functions</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">4</span>
+            <strong>Scraper</strong>
+            <small>Requests + BS4 (robots.txt)</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">5</span>
+            <strong>Validation</strong>
+            <small>Schema & Hygiene Checks</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">6</span>
+            <strong>Transform & Dedup</strong>
+            <small>SHA-256 Fingerprinting</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">7</span>
+            <strong>Dual Storage</strong>
+            <small>DynamoDB & S3 (Local JSON)</small>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-step">
+            <span class="flow-num">8</span>
+            <strong>Telemetry</strong>
+            <small>SNS & FinOps Cost Metrics</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Execution Control Center -->
+    <section class="card control-card">
+      <div class="control-header">
+        <div class="control-title-wrap">
+          <span class="section-icon">🎮</span>
+          <h2 class="section-title">Pipeline Execution Control</h2>
+        </div>
+        <div class="env-mode-tag">
+          <span class="pulse-dot"></span> Mode: <strong>Zero-Cost Demonstration</strong> ($0.00 cloud charges)
+        </div>
+      </div>
+
+      <div class="control-grid">
+        <div class="form-group">
+          <label for="siteSelector" class="form-label">Target Website Feed</label>
+          <select id="siteSelector" class="form-control">
+            <option value="books_toscrape">Books to Scrape (https://books.toscrape.com/)</option>
+            <option value="quotes_toscrape">Quotes to Scrape (https://quotes.toscrape.com/)</option>
+          </select>
+          <small class="form-hint" id="siteHint">Permitted public sandbox for scraping evaluation.</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Execution Source Mode</label>
+          <div class="radio-options">
+            <label class="radio-label">
+              <input type="radio" name="sourceMode" value="live" checked>
+              <span>Live Web Scraping (Real HTTP)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="sourceMode" value="fixture">
+              <span>Offline Controlled Fixture (No internet needed)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button id="scrapeBtn" class="btn btn-primary">
+            <span id="scrapeBtnIcon">▶</span>
+            <span id="scrapeBtnText">Scrape Now</span>
+          </button>
+          <button id="simulateFailBtn" class="btn btn-outline" title="Simulates connection error to show Step Functions failure handling & DLQ routing">
+            <span>⚠️</span> Test Fault Tolerance
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Loading State -->
+      <div class="loading-bar-wrap" id="loadingBarWrap" style="display: none;">
+        <div class="loading-bar">
+          <div class="loading-progress"></div>
+        </div>
+        <p class="loading-status-text" id="loadingStatusText">Initiating serverless pipeline execution...</p>
+      </div>
+
+      <!-- Error Banner -->
+      <div class="alert alert-error" id="errorBanner" style="display: none;">
+        <div class="alert-icon">⚠️</div>
+        <div class="alert-content">
+          <strong id="errorTitle">Execution Error</strong>
+          <p id="errorMsg">Details...</p>
+        </div>
+      </div>
+
+      <!-- Success Banner -->
+      <div class="alert alert-success" id="successBanner" style="display: none;">
+        <div class="alert-icon">✅</div>
+        <div class="alert-content">
+          <strong id="successTitle">Pipeline Execution Completed</strong>
+          <p id="successMsg">Data successfully scraped, cleaned, transformed, and saved.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Metrics Summary Bar -->
+    <section class="metrics-grid" id="metricsGrid" style="display: none;">
+      <div class="metric-card">
+        <span class="metric-label">Raw Scraped</span>
+        <span class="metric-val" id="metricScraped">0</span>
+        <span class="metric-sub">Live DOM items</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Schema Validated</span>
+        <span class="metric-val text-green" id="metricValid">0</span>
+        <span class="metric-sub" id="metricInvalid">0 rejected</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Duplicates Removed</span>
+        <span class="metric-val text-purple" id="metricDuplicates">0</span>
+        <span class="metric-sub">SHA-256 fingerprinting</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Clean Stored Records</span>
+        <span class="metric-val text-blue" id="metricClean">0</span>
+        <span class="metric-sub">Unique entities</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Execution Duration</span>
+        <span class="metric-val" id="metricDuration">0.00s</span>
+        <span class="metric-sub">End-to-end latency</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-label">Est. Cloud Cost</span>
+        <span class="metric-val text-yellow" id="metricCost">$0.000000</span>
+        <span class="metric-sub">Actual: $0.00 (Local)</span>
+      </div>
+    </section>
+
+    <!-- Step Functions Pipeline Stage Tracker -->
+    <section class="card stages-card" id="stagesCard" style="display: none;">
+      <div class="card-header">
+        <span class="section-icon">🔄</span>
+        <h2 class="section-title">Step Functions State Machine Lifecycle</h2>
+        <span class="badge badge-purple" id="sfnExecIdBadge">Execution: Idle</span>
+      </div>
+      <div class="stages-list" id="stagesList">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- Dual-Tier Storage Status Panel -->
+    <section class="card storage-card" id="storageCard" style="display: none;">
+      <div class="card-header">
+        <span class="section-icon">💾</span>
+        <h2 class="section-title">Dual-Tier Storage & Lineage Panel</h2>
+        <span class="badge badge-outline">Cloud vs Local Disambiguation</span>
+      </div>
+      <div class="storage-grid">
+        <div class="storage-box storage-local">
+          <div class="storage-box-header">
+            <span class="status-indicator-green">●</span>
+            <strong>Local Immutable JSON Store (Active)</strong>
+          </div>
+          <p class="storage-desc">Saved structured dataset locally to maintain zero-cost operation without requiring active AWS credentials.</p>
+          <div class="storage-path-box">
+            <code>Path: <span id="localFilePath">output/books_toscrape.json</span></code>
+          </div>
+          <div class="storage-action">
+            <a id="downloadLocalBtn" class="btn btn-sm btn-outline" href="#">⬇ Download output JSON file</a>
+          </div>
+        </div>
+
+        <div class="storage-box storage-cloud">
+          <div class="storage-box-header">
+            <span class="status-indicator-gray">○</span>
+            <strong>AWS S3 & DynamoDB (Cloud Target)</strong>
+          </div>
+          <p class="storage-desc">Cloud storage integration is fully coded in <code>dynamodb_store.py</code> and <code>template.yml</code>, but safely bypassed because no AWS credentials were provided.</p>
+          <ul class="cloud-targets-list">
+            <li><strong>S3 Raw Snapshot:</strong> <code>raw/{site_id}/{timestamp}/page.html</code> <span class="tag tag-gray">Not Uploaded (Zero-Cost)</span></li>
+            <li><strong>S3 Transformed JSON:</strong> <code>transform/{site_id}/records.json</code> <span class="tag tag-gray">Not Uploaded (Zero-Cost)</span></li>
+            <li><strong>DynamoDB Table:</strong> <code>TheCloudScraper-Records</code> <span class="tag tag-gray">Conditional Writes Ready</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live Scraped Results Table -->
+    <section class="card results-card" id="resultsCard" style="display: none;">
+      <div class="results-header">
+        <div class="results-title-wrap">
+          <span class="section-icon">📊</span>
+          <h2 class="section-title">Live Scraped & Cleaned Results Table</h2>
+          <span class="badge badge-blue" id="tableCountBadge">0 records</span>
+        </div>
+        <div class="table-actions">
+          <input type="text" id="tableSearchInput" class="table-search" placeholder="Search live results...">
+          <button id="downloadJsonBtn" class="btn btn-sm btn-primary">⬇ Export JSON</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table" id="resultsTable">
+          <thead>
+            <tr id="tableHeaders">
+              <!-- Dynamically populated -->
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Raw JSON Preview Section -->
+    <section class="card json-card" id="jsonCard" style="display: none;">
+      <div class="card-header">
+        <span class="section-icon">🔍</span>
+        <h2 class="section-title">Standardized JSON Dataset Preview</h2>
+        <div class="json-actions">
+          <button id="copyJsonBtn" class="btn btn-sm btn-outline">📋 Copy JSON</button>
+        </div>
+      </div>
+      <pre class="json-viewer"><code id="jsonCodeBlock">// Live JSON payload will appear here after scraping</code></pre>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>
+      <strong>The Cloud Scraper</strong> &bull; Serverless Automated Data Pipeline &bull; Designed for Cloud Architecture Design (CAD) Course
+    </p>
+    <p class="footer-sub">
+      Built with Python 3, Requests, BeautifulSoup, AWS Step Functions & DynamoDB architecture &bull; Zero-Cost Local Demonstration Mode
+    </p>
+  </footer>
+
+  <script src="web/app.js"></script>
+</body>
+</html>

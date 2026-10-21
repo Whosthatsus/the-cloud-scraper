@@ -1,0 +1,32 @@
+[
+  {
+    "title": "Cloud Architecture Patterns",
+    "price": 49.99,
+    "price_raw": "£49.99",
+    "availability": "In stock",
+    "rating": 5,
+    "rating_raw": "star-rating Five",
+    "detail_link": "https://books.toscrape.com/catalogue/cloud-architecture-patterns_1/index.html",
+    "record_id": "books_toscrape#cc695ecfae79b66b",
+    "content_hash": "cc695ecfae79b66b289e239957a06a4cf565f6af2624ab3420a99304cedfc76a",
+    "site_id": "books_toscrape",
+    "source_url": "https://books.toscrape.com/catalogue/page-1.html",
+    "scraped_at": "2026-10-21T19:47:00.965978+00:00",
+    "transformed_at": "2026-10-21T19:47:00.998262+00:00"
+  },
+  {
+    "title": "Serverless Data Pipelines",
+    "price": 39.5,
+    "price_raw": "£39.50",
+    "availability": "In stock",
+    "rating": 4,
+    "rating_raw": "star-rating Four",
+    "detail_link": "https://books.toscrape.com/catalogue/serverless-design_2/index.html",
+    "record_id": "books_toscrape#bbe21ce740f58e15",
+    "content_hash": "bbe21ce740f58e15b8639447f3e307eb59cfd40299a8a2a36c59ac57b859007d",
+    "site_id": "books_toscrape",
+    "source_url": "https://books.toscrape.com/catalogue/page-1.html",
+    "scraped_at": "2026-10-21T19:47:00.965978+00:00",
+    "transformed_at": "2026-10-21T19:47:00.998262+00:00"
+  }
+]

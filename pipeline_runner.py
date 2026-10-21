@@ -110,12 +110,56 @@ def run_pipeline(
         print("\n[Fault Tolerance] Step Functions Catch Block Triggered -> Route Failure to SQS DLQ")
         print("  [DLQ] Enqueued failed execution payload to ScraperDLQ (Redrive isolation)")
         print("\n[State 5/5] Executing Failure Notification Lambda...")
-        scrape_result["duration_seconds"] = time.time() - start_time
+        elapsed_err = round(time.time() - start_time, 2)
+        scrape_result["duration_seconds"] = elapsed_err
+        scrape_result["elapsed_seconds"] = elapsed_err
         notify_result = notification_handler(scrape_result)
         print(f"  [ALERT] Published failure alarm to Amazon SNS: {notify_result.get('summary')}")
         print("\n" + "=" * 70)
-        print(f"[FAULT TOLERANCE VERIFIED] Pipeline gracefully handled failure in {scrape_result['duration_seconds']:.2f}s")
+        print(f"[FAULT TOLERANCE VERIFIED] Pipeline gracefully handled failure in {elapsed_err:.2f}s")
         print("=" * 70)
+        scrape_result["cost_metrics"] = notify_result.get("cost_metrics", {
+            "estimated_total_usd": 0.000000,
+            "lambda_invocations": 2,
+            "s3_requests": 0,
+            "dynamodb_writes": 0,
+            "step_function_state_transitions": 3,
+        })
+        scrape_result["stages"] = [
+            {
+                "id": "trigger",
+                "name": "Event Ingestion & Dispatch",
+                "service": "EventBridge / API Gateway",
+                "status": "COMPLETED",
+                "detail": f"Dispatched scraping job for '{site_id}'",
+            },
+            {
+                "id": "scraper",
+                "name": "Live Web Scraping & Ingestion",
+                "service": "AWS Lambda (Requests + BS4)",
+                "status": "FAILED",
+                "detail": f"{scrape_result.get('error', 'Scraper failed')}",
+            },
+            {
+                "id": "dlq",
+                "name": "Step Functions Catch Block -> DLQ",
+                "service": "Amazon SQS Dead Letter Queue",
+                "status": "COMPLETED",
+                "detail": "Failed execution payload routed to ScraperDLQ with Redrive policy",
+            },
+            {
+                "id": "notification",
+                "name": "Failure Alarm & Operator Notification",
+                "service": "Amazon SNS & CloudWatch",
+                "status": "COMPLETED",
+                "detail": f"SNS Alert: {notify_result.get('summary', 'Alarm published')}",
+            },
+        ]
+        scrape_result["scraped"] = 0
+        scrape_result["valid"] = 0
+        scrape_result["duplicates_removed"] = 0
+        scrape_result["transformed"] = 0
+        scrape_result["records"] = []
         return scrape_result
 
     print(f"  [OK] Scraped {scrape_result.get('records_count')} records from {scrape_result.get('target_url')}")
@@ -162,12 +206,68 @@ def run_pipeline(
         "status": "SUCCESS",
         "site_id": site_id,
         "elapsed_seconds": round(elapsed, 2),
+        "target_url": scrape_result.get("target_url", ""),
         "scraped": scrape_result.get("records_count"),
+        "raw_records_count": scrape_result.get("records_count", 0),
         "valid": val_result.get("valid_count"),
+        "invalid_count": val_result.get("invalid_count", 0),
         "transformed": transform_result.get("total_transformed"),
         "duplicates_removed": transform_result.get("duplicates_removed"),
         "cost_metrics": notify_result.get("cost_metrics"),
         "sample_record": transform_result["records"][0] if transform_result.get("records") else None,
+        "records": transform_result.get("records", []),
+        "stages": [
+            {
+                "id": "trigger",
+                "name": "Event Ingestion & Dispatch",
+                "service": "EventBridge / API Gateway",
+                "status": "COMPLETED",
+                "detail": f"Dispatched scraping job for '{site_id}'",
+            },
+            {
+                "id": "scraper",
+                "name": "Live Web Scraping & Raw Snapshot",
+                "service": "AWS Lambda (Requests + BS4)",
+                "status": "COMPLETED",
+                "detail": f"Scraped {scrape_result.get('records_count')} records from {scrape_result.get('target_url')}",
+            },
+            {
+                "id": "validation",
+                "name": "Schema & Quality Validation",
+                "service": "AWS Lambda",
+                "status": "COMPLETED",
+                "detail": f"{val_result.get('valid_count')} valid records, {val_result.get('invalid_count')} invalid",
+            },
+            {
+                "id": "transformation",
+                "name": "Normalization & SHA-256 Deduplication",
+                "service": "AWS Lambda",
+                "status": "COMPLETED",
+                "detail": f"{transform_result.get('total_transformed')} unique entities ({transform_result.get('duplicates_removed')} duplicates filtered)",
+            },
+            {
+                "id": "storage",
+                "name": "Dual-Tier Storage (Local & Cloud)",
+                "service": "Amazon DynamoDB & S3",
+                "status": "COMPLETED",
+                "detail": store_result.get("summary", "Stored records"),
+            },
+            {
+                "id": "notification",
+                "name": "FinOps Telemetry & Alerts",
+                "service": "Amazon SNS & CloudWatch",
+                "status": "COMPLETED",
+                "detail": f"Estimated run cost: ${notify_result['cost_metrics']['estimated_total_usd']:.6f} USD",
+            },
+        ],
+        "storage": {
+            "mode": store_result.get("storage_mode", "OFFLINE_LOCAL_MODE"),
+            "local_file": f"output/{site_id}.json",
+            "records_stored_locally": len(transform_result.get("records", [])),
+            "aws_s3_status": "NOT_CONFIGURED (Zero-Cost Local Mode)",
+            "aws_dynamodb_status": "NOT_CONFIGURED (Zero-Cost Local Mode)",
+            "message": "Immutable JSON snapshot stored locally under output/. Live AWS credentials omitted for zero-cost operation.",
+        },
     }
 
 
