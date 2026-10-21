@@ -7,8 +7,8 @@
     "content_hash": "bf81896255cf49bea75381d436613422f8d5c7bd3e532e60d5a60a5290996bac",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Today's PHP security release, and how we're strengthening security",
@@ -18,30 +18,30 @@
     "content_hash": "f28abe731a5c72287258e4311040a2e359aea3d2f1b72fbbf4fe8932e190570c",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
-  },
-  {
-    "title": "Google's Rust Style Guide",
-    "rank": "3.",
-    "detail_link": "https://google.github.io/styleguide/rustguide.html",
-    "record_id": "hacker_news#596c64ee5726b034",
-    "content_hash": "596c64ee5726b0345daafb196e303ef30682deda76de90ff23307b2ea1bc95b1",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "GitLab CVSS 10.0 Integer Overflow issue",
-    "rank": "4.",
+    "rank": "3.",
     "detail_link": "https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-5-1-released/",
     "record_id": "hacker_news#ed3b2fec69552bfe",
     "content_hash": "ed3b2fec69552bfef0a1722751dd1388b2347e08d753abccb557b630a471a613",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Why Windows 11 still ships with Windows 95's memory manager hidden inside it",
+    "rank": "4.",
+    "detail_link": "https://www.windowslatest.com/2026/10/19/why-windows-11-still-ships-with-windows-95s-memory-manager-hidden-inside-it/",
+    "record_id": "hacker_news#59b4b6b63faf271d",
+    "content_hash": "59b4b6b63faf271d617d41f20e8b29467836f60b33a57c8311a5062300567cc6",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Compromised LiteLLM 1.107.0 on PyPI Installs a Credential Stealer and Backdoor",
@@ -51,19 +51,19 @@
     "content_hash": "d5d385683d41db6a37feb5216fe80a9bfef729e66b05040447bfbce58bbb59f4",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
-    "title": "Why Windows 11 still ships with Windows 95's memory manager hidden inside it",
+    "title": "Meta hit with $25B penalty for deceiving users about privacy on Facebook",
     "rank": "6.",
-    "detail_link": "https://www.windowslatest.com/2026/10/19/why-windows-11-still-ships-with-windows-95s-memory-manager-hidden-inside-it/",
-    "record_id": "hacker_news#59b4b6b63faf271d",
-    "content_hash": "59b4b6b63faf271d617d41f20e8b29467836f60b33a57c8311a5062300567cc6",
+    "detail_link": "https://nmdoj.gov/press-release/the-new-mexico-department-of-justice-secures-another-landmark-victory-against-big-tech-with-historic-25-billion-penalty-against-facebook/",
+    "record_id": "hacker_news#d4d5d063267b1d4a",
+    "content_hash": "d4d5d063267b1d4a03b36879a77b7282e4788d66648ddf1815d7fb03a3baa8a2",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Eight Bits of Trust: eMudhra's CA keys cracked in milliseconds",
@@ -73,107 +73,107 @@
     "content_hash": "1aca46e0270a02723dc2a853a63e3961118640098821e51c486bd65f3f826cb7",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
-  },
-  {
-    "title": "DuckDB 2.0.0 LTS “Cinnamon Teal”",
-    "rank": "8.",
-    "detail_link": "https://duckdb.org/2026/10/21/announcing-duckdb-200",
-    "record_id": "hacker_news#5e1bc9c81232dcfb",
-    "content_hash": "5e1bc9c81232dcfbfd5aefb07836df49d641c86cffc97d7b8a924e38cc876fb8",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.276688+00:00"
-  },
-  {
-    "title": "EA is shutting down BioWare",
-    "rank": "9.",
-    "detail_link": "https://www.theverge.com/games/1015647/ea-is-shutting-down-bioware",
-    "record_id": "hacker_news#aee976620a2b41ee",
-    "content_hash": "aee976620a2b41ee6993470f050ba808b6a2053331f666a7893d9d0c42023b35",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "Oregon lawmakers approve money to buy an iconic waterfall listed on Redfin",
-    "rank": "10.",
-    "detail_link": "https://apnews.com/article/oregon-waterfall-for-sale-lawmakers-996de63462d49ec3ad9bee1629fb9488",
-    "record_id": "hacker_news#84ef2bf669fb694e",
-    "content_hash": "84ef2bf669fb694e0599d628374a6a5a21d7a68c57b25ed93f88add051c84530",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "Tiny possum and glider thought extinct for 6000 years found in remote West Papua",
-    "rank": "11.",
-    "detail_link": "https://www.bbc.com/news/articles/cp814l80pw2o",
-    "record_id": "hacker_news#2f7810a12547ee27",
-    "content_hash": "2f7810a12547ee2789eb6637588e1ea8e8cac4d44ea988afd90c97b0bf591eb3",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "Patch the Planet: global response coordination as agents uncover vulnerabilities",
-    "rank": "12.",
-    "detail_link": "https://openai.com/index/coordinated-disclosure-of-critical-vulnerabilities/",
-    "record_id": "hacker_news#11dac1e956a37e87",
-    "content_hash": "11dac1e956a37e87475b991c79e9fdcfb5af923d8e205508c54b4fd6fb5ca20c",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "After automation: Solo founding will be the default",
-    "rank": "13.",
+    "rank": "8.",
     "detail_link": "https://every.to/thesis-statements/julian-weisser",
     "record_id": "hacker_news#04c121350a5a10cd",
     "content_hash": "04c121350a5a10cdc9d5024e1a6b14870446d51bf5a061d79dadee4966562444",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Google's Rust Style Guide",
+    "rank": "9.",
+    "detail_link": "https://google.github.io/styleguide/rustguide.html",
+    "record_id": "hacker_news#596c64ee5726b034",
+    "content_hash": "596c64ee5726b0345daafb196e303ef30682deda76de90ff23307b2ea1bc95b1",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "DuckDB 2.0.0 LTS “Cinnamon Teal”",
+    "rank": "10.",
+    "detail_link": "https://duckdb.org/2026/10/21/announcing-duckdb-200",
+    "record_id": "hacker_news#5e1bc9c81232dcfb",
+    "content_hash": "5e1bc9c81232dcfbfd5aefb07836df49d641c86cffc97d7b8a924e38cc876fb8",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "EA is shutting down BioWare",
+    "rank": "11.",
+    "detail_link": "https://www.theverge.com/games/1015647/ea-is-shutting-down-bioware",
+    "record_id": "hacker_news#aee976620a2b41ee",
+    "content_hash": "aee976620a2b41ee6993470f050ba808b6a2053331f666a7893d9d0c42023b35",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Tiny possum and glider thought extinct for 6000 years found in remote West Papua",
+    "rank": "12.",
+    "detail_link": "https://www.bbc.com/news/articles/cp814l80pw2o",
+    "record_id": "hacker_news#2f7810a12547ee27",
+    "content_hash": "2f7810a12547ee2789eb6637588e1ea8e8cac4d44ea988afd90c97b0bf591eb3",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Patch the Planet: global response coordination as agents uncover vulnerabilities",
+    "rank": "13.",
+    "detail_link": "https://openai.com/index/coordinated-disclosure-of-critical-vulnerabilities/",
+    "record_id": "hacker_news#11dac1e956a37e87",
+    "content_hash": "11dac1e956a37e87475b991c79e9fdcfb5af923d8e205508c54b4fd6fb5ca20c",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Oregon lawmakers approve money to buy an iconic waterfall listed on Redfin",
+    "rank": "14.",
+    "detail_link": "https://apnews.com/article/oregon-waterfall-for-sale-lawmakers-996de63462d49ec3ad9bee1629fb9488",
+    "record_id": "hacker_news#84ef2bf669fb694e",
+    "content_hash": "84ef2bf669fb694e0599d628374a6a5a21d7a68c57b25ed93f88add051c84530",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "PHP 8.2.35",
-    "rank": "14.",
+    "rank": "15.",
     "detail_link": "https://github.com/php/php-src/releases/tag/php-8.2.35",
     "record_id": "hacker_news#51c4d562c7c39f44",
     "content_hash": "51c4d562c7c39f4488bc74c5ca4d9be2830c874aca88c64b64a7a45204404e18",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "New plastic pollution discovered: 'Plasticorals' coral rubble fused with plastic",
-    "rank": "15.",
+    "rank": "16.",
     "detail_link": "https://www.oist.jp/news-center/news/2026/9/18/new-form-plastic-pollution-discovered-shores-vulnerable-coral-reefs",
     "record_id": "hacker_news#c7bf2aca8beb68eb",
     "content_hash": "c7bf2aca8beb68eb1d490cdaa5bdbf12b78598dea14b1bb6b667e99ab7a5f03a",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "Anthropic's Public Benefit Charter",
-    "rank": "16.",
-    "detail_link": "https://www.anthropic.com/public-benefit-charter",
-    "record_id": "hacker_news#c8bfd765b605d7ae",
-    "content_hash": "c8bfd765b605d7ae2373c50e004711bfd42faabf8df9ae6af3848cc1b636370a",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "OpenAI models are coming to Google Cloud",
@@ -183,41 +183,41 @@
     "content_hash": "2c346cbe68ca7cf9dd4ab00ea9bcebd8f8dad098c68782199ee88f6e03df0e22",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "Canary Tokens",
-    "rank": "18.",
-    "detail_link": "https://canarytokens.org/",
-    "record_id": "hacker_news#a5b060bab5ce98e0",
-    "content_hash": "a5b060bab5ce98e0c25bc5a3b814a6a67e48e507d71332388991884c5ccc89ae",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "Plex laid off the whole player team",
-    "rank": "19.",
-    "detail_link": "https://forums.plex.tv/t/2026-20-0-beta-ios-and-tvos-4k-dovi-hdr10-won-t-play-infinite-spinning-circle/943966?page=5",
-    "record_id": "hacker_news#f746d0eda6e3b351",
-    "content_hash": "f746d0eda6e3b3511ef74b4fea7f15944e4389337b57b3e04fe0946591a63e1a",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Claude Duet",
-    "rank": "20.",
+    "rank": "18.",
     "detail_link": "https://claude.com/product/claude-duet",
     "record_id": "hacker_news#a07e640a9cbd3b0f",
     "content_hash": "a07e640a9cbd3b0fa87312de664d7d0ef0e8568e714117e25ee2f62f8307530e",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Potential third critical PHP CVE",
+    "rank": "19.",
+    "detail_link": "https://elk.zone/m.webtoo.ls/@elise@katze.sh/117479383721672027",
+    "record_id": "hacker_news#868e0e7f1cd3cfff",
+    "content_hash": "868e0e7f1cd3cfff948ddb85626ea8ace9fa041d60a7ec1bec74aaa061dfb9d4",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Canary Tokens",
+    "rank": "20.",
+    "detail_link": "https://canarytokens.org/",
+    "record_id": "hacker_news#a5b060bab5ce98e0",
+    "content_hash": "a5b060bab5ce98e0c25bc5a3b814a6a67e48e507d71332388991884c5ccc89ae",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "A Place Among the Fiddlers",
@@ -227,8 +227,8 @@
     "content_hash": "18168835f9f5b3b9195d884b0052b5cca9cf6921b6a0065215379af2a302bf72",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Meta ordered to pay $25B penalty in New Mexico Cambridge Analytica case",
@@ -238,8 +238,8 @@
     "content_hash": "d407d1a7dce9c5e5f11494c54b3fdb0e52daea1ba0d2cd92b627673ee3c552cc",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "9 Mothers (YC P26) Is Hiring in Austin, TX",
@@ -249,8 +249,8 @@
     "content_hash": "dac9297b694cfb5ce483aa436b295c7df9c8da1d45bfe6402a0bd84fbb607d9d",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Using thousands of AI agents to uncover new leads in biological data",
@@ -260,63 +260,63 @@
     "content_hash": "758287a1b851d8fc0b9c8a29b199ae797734b0e2ac651d82ac4bd2aa3f039843",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
-  },
-  {
-    "title": "The bridge to agent-scale Git infrastructure",
-    "rank": "25.",
-    "detail_link": "https://github.blog/engineering/architecture-optimization/the-bridge-to-agent-scale-git-infrastructure/",
-    "record_id": "hacker_news#e5870a51a0fd8653",
-    "content_hash": "e5870a51a0fd8653660f87075e21ff235f6552d3eb8924a2c51386171a5d3786",
-    "site_id": "hacker_news",
-    "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Drupal is now light-years ahead of its reputation",
-    "rank": "26.",
+    "rank": "25.",
     "detail_link": "https://dri.es/state-of-drupal-presentation-september-2026",
     "record_id": "hacker_news#cb19391726778d27",
     "content_hash": "cb19391726778d277194179a03ce1171c873632fa2dbb2db80facaad2a6e6cf1",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
-    "title": "Potential third critical PHP CVE",
-    "rank": "27.",
-    "detail_link": "https://elk.zone/m.webtoo.ls/@elise@katze.sh/117479383721672027",
-    "record_id": "hacker_news#868e0e7f1cd3cfff",
-    "content_hash": "868e0e7f1cd3cfff948ddb85626ea8ace9fa041d60a7ec1bec74aaa061dfb9d4",
+    "title": "The bridge to agent-scale Git infrastructure",
+    "rank": "26.",
+    "detail_link": "https://github.blog/engineering/architecture-optimization/the-bridge-to-agent-scale-git-infrastructure/",
+    "record_id": "hacker_news#e5870a51a0fd8653",
+    "content_hash": "e5870a51a0fd8653660f87075e21ff235f6552d3eb8924a2c51386171a5d3786",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Your MCU likely escaped the eMudhra intermediate CA compromise",
-    "rank": "28.",
+    "rank": "27.",
     "detail_link": "https://danielmangum.com/posts/mcu-emudhra-intermediate-ca-compromise/",
     "record_id": "hacker_news#3b71470bd6d8244a",
     "content_hash": "3b71470bd6d8244aec8b50bf40113270d210cd713b8084027a5ee43d5212a790",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
-    "title": "Meta hit with $25B penalty for deceiving users about privacy on Facebook",
-    "rank": "29.",
-    "detail_link": "https://nmdoj.gov/press-release/the-new-mexico-department-of-justice-secures-another-landmark-victory-against-big-tech-with-historic-25-billion-penalty-against-facebook/",
-    "record_id": "hacker_news#d4d5d063267b1d4a",
-    "content_hash": "d4d5d063267b1d4a03b36879a77b7282e4788d66648ddf1815d7fb03a3baa8a2",
+    "title": "CDC Ignored Request from States to Validate a New Measles Test",
+    "rank": "28.",
+    "detail_link": "https://www.nytimes.com/2026/10/21/health/measles-test-cdc.html",
+    "record_id": "hacker_news#5364e28390e18a11",
+    "content_hash": "5364e28390e18a11ebd315c9694bbd645fb7e89af1bc6e305e5d246f72b9b05a",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
+  },
+  {
+    "title": "Claude Duet",
+    "rank": "29.",
+    "detail_link": "https://claude.com/resources/articles/claude-duet",
+    "record_id": "hacker_news#e3e35ea1cd17ff61",
+    "content_hash": "e3e35ea1cd17ff6142ee834a6ebac579e0dfe48b6bf1e585a14abac211a15a90",
+    "site_id": "hacker_news",
+    "source_url": "https://news.ycombinator.com/",
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   },
   {
     "title": "Show HN: I told people I'm a convicted felon after 20 years of hiding it",
@@ -326,7 +326,7 @@
     "content_hash": "180b88127088ec0132223961caa65f7d29be33921bfde43c76371bee82afdafa",
     "site_id": "hacker_news",
     "source_url": "https://news.ycombinator.com/",
-    "scraped_at": "2026-10-21T20:28:44.424894+00:00",
-    "transformed_at": "2026-10-21T20:28:46.277689+00:00"
+    "scraped_at": "2026-10-21T20:44:06.517788+00:00",
+    "transformed_at": "2026-10-21T20:44:13.192958+00:00"
   }
 ]
