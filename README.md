@@ -168,18 +168,32 @@ You can verify the entire pipeline locally without requiring active AWS credenti
 pip install -r requirements.txt
 ```
 
-### Step 2: Run the Automated Test Suite (PyTest)
+### Step 2: Launch the Interactive Web Dashboard (Zero-Cost Demonstration)
+Launch the lightweight zero-dependency local web dashboard to demonstrate the full application (frontend + backend pipeline) to your teacher without incurring any AWS charges:
+
+```bash
+python server.py
+```
+Open **[http://localhost:8000](http://localhost:8000)** in your web browser.
+
+**Features of the Demonstration Dashboard:**
+- **System Architecture Visualizer:** Interactive flow diagram illustrating the 8-step serverless pipeline.
+- **Target Website Selector:** Select between *Books to Scrape* (e-commerce HTML) and *Quotes to Scrape* (quotes & authors).
+- **Execution Source Modes:** Switch seamlessly between **Live Web Scraping** (real HTTP) and **Offline Controlled Fixtures** (zero internet requirement).
+- **Interactive Scrape Trigger:** Click **"Scrape Now"** to execute the pipeline, observing real-time state progress.
+- **Step Functions State Machine Tracker:** Live visual rendering of each execution phase (*Event Dispatch -> Lambda Scraper -> Validation -> Transformation -> Storage -> Telemetry*).
+- **Fault-Tolerance Verification:** Click **"Test Fault Tolerance"** to simulate upstream network failure, verifying that Step Functions' Catch Block isolates the failure, diverts to the **SQS Dead Letter Queue (DLQ)**, and triggers the **SNS Alarm**.
+- **Live Results Table:** Interactive, searchable data table displaying scraped entities, prices, ratings, and SHA-256 fingerprint hashes.
+- **Dual-Tier Storage Panel:** Disambiguates active local JSON storage (`output/<site_id>.json`) from cloud AWS targets (S3/DynamoDB), ensuring strict zero-cost transparency.
+- **JSON Export & Download:** One-click instant download of the sanitized dataset directly to your local machine.
+
+### Step 3: Run the Automated Test Suite (PyTest)
 Execute all 32 unit and integration tests across all pipeline modules:
 ```bash
 pytest -v tests/
 ```
 
-**Expected Result:**
-```
-============================== 32 passed in 3.21s ==============================
-```
-
-### Step 3: Run the Full End-to-End Pipeline Simulator
+### Step 4: Run the CLI Pipeline Simulator
 The pipeline simulator [`pipeline_runner.py`](pipeline_runner.py) mirrors Step Functions execution semantics:
 
 ```bash
