@@ -18,12 +18,12 @@ Parameters:
     Type: String
     Description: Unique S3 bucket name for raw HTML snapshots and transformed JSON datasets
     AllowedPattern: "[a-z0-9][a-z0-9.-]*[a-z0-9]"
-    Default: the-cloud-scraper-datalake-cad-2026
+    Default: the-cloud-scraper-bhumi-20261023
 
   pEmailforNotification:
     Type: String
     Description: Valid email address for SNS pipeline execution alerts and failure notifications
-    Default: alert-recipient@example.com
+    Default: bhumi.choudhary166@gmail.com
 
   pScrapeSchedule:
     Type: String
@@ -384,7 +384,7 @@ Resources:
       Name: !Sub "${AWS::StackName}-scheduled-rule"
       Description: Scheduled trigger to execute website scraping jobs
       ScheduleExpression: !Ref pScrapeSchedule
-      State: ENABLED
+      State: DISABLED
       Targets:
         - Arn: !GetAtt JobDispatcherFunction.Arn
           Id: ScraperJobDispatcherTarget

@@ -5,11 +5,11 @@
   },
   {
     "ParameterKey": "pS3BucketName",
-    "ParameterValue": "the-cloud-scraper-datalake-cad-2026"
+    "ParameterValue": "the-cloud-scraper-bhumi-20261023"
   },
   {
     "ParameterKey": "pEmailforNotification",
-    "ParameterValue": "student-alerts@cad-course.edu"
+    "ParameterValue": "bhumi.choudhary166@gmail.com"
   },
   {
     "ParameterKey": "pScrapeSchedule",
