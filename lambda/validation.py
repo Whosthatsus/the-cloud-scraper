@@ -16,19 +16,22 @@ logger.setLevel(logging.INFO)
 
 def load_validation_rules(site_id: str) -> dict:
     """Load validation rules for site from config."""
-    config_path = os.environ.get(
-        "SITES_CONFIG_PATH",
+    candidate_paths = [
+        os.environ.get("SITES_CONFIG_PATH"),
+        os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
         os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
-    )
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                for site in data.get("sites", []):
-                    if site.get("site_id") == site_id:
-                        return site.get("validation_rules", {})
-        except Exception as e:
-            logger.warning("Could not read config at %s: %s", config_path, str(e))
+        os.path.join(os.getcwd(), "config", "sites_config.json"),
+    ]
+    for cp in candidate_paths:
+        if cp and os.path.exists(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    for site in data.get("sites", []):
+                        if site.get("site_id") == site_id:
+                            return site.get("validation_rules", {})
+            except Exception as e:
+                logger.warning("Could not read config at %s: %s", cp, str(e))
     return {}
 
 

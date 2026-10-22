@@ -132,19 +132,21 @@ def load_site_config(site_id: str, config_override: dict = None) -> dict:
     if config_override and config_override.get("site_id") == site_id:
         return config_override
 
-    config_path = os.environ.get(
-        "SITES_CONFIG_PATH",
+    candidate_paths = [
+        os.environ.get("SITES_CONFIG_PATH"),
+        os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
         os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
-    )
+        os.path.join(os.getcwd(), "config", "sites_config.json"),
+    ]
+    for cp in candidate_paths:
+        if cp and os.path.exists(cp):
+            with open(cp, "r", encoding="utf-8") as f:
+                all_configs = json.load(f)
+                for site in all_configs.get("sites", []):
+                    if site.get("site_id") == site_id:
+                        return site
 
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            all_configs = json.load(f)
-            for site in all_configs.get("sites", []):
-                if site.get("site_id") == site_id:
-                    return site
-
-    raise ValueError(f"Configuration for site_id '{site_id}' not found at {config_path}")
+    raise ValueError(f"Configuration for site_id '{site_id}' not found in candidate paths: {candidate_paths}")
 
 
 def fetch_page_content(url: str, timeout: int = 15, user_agent: str = DEFAULT_USER_AGENT) -> requests.Response:

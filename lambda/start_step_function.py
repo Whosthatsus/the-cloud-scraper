@@ -28,18 +28,20 @@ def is_running_in_aws() -> bool:
 
 
 def get_enabled_sites() -> list:
-    """Read enabled sites from configuration file."""
-    config_path = os.environ.get(
-        "SITES_CONFIG_PATH",
+    candidate_paths = [
+        os.environ.get("SITES_CONFIG_PATH"),
+        os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
         os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
-    )
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return [s.get("site_id") for s in data.get("sites", []) if s.get("enabled", True)]
-        except Exception as e:
-            logger.warning("Could not read sites configuration: %s", str(e))
+        os.path.join(os.getcwd(), "config", "sites_config.json"),
+    ]
+    for cp in candidate_paths:
+        if cp and os.path.exists(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return [s.get("site_id") for s in data.get("sites", []) if s.get("enabled", True)]
+            except Exception as e:
+                logger.warning("Could not read sites configuration at %s: %s", cp, str(e))
     return ["books_toscrape", "quotes_toscrape"]
 
 
@@ -207,7 +209,12 @@ def lambda_handler(event, context=None):
     if is_api_request:
         return {
             "statusCode": 202,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                "Access-Control-Allow-Methods": "POST,OPTIONS",
+            },
             "body": json.dumps({
                 "message": f"Successfully initiated scraping pipeline for {len(results)} job(s)",
                 "jobs": results,

@@ -1,0 +1,183 @@
+{
+  "sites": [
+    {
+      "site_id": "books_toscrape",
+      "site_name": "Books to Scrape",
+      "base_url": "https://books.toscrape.com/",
+      "target_url": "https://books.toscrape.com/catalogue/page-1.html",
+      "enabled": true,
+      "schedule": "cron(0 12 * * ? *)",
+      "rate_limit_delay_seconds": 1.0,
+      "timeout_seconds": 15,
+      "max_retries": 3,
+      "container_selector": "article.product_pod",
+      "next_page_selector": "li.next a",
+      "fields": {
+        "title": {
+          "selector": "h3 a",
+          "attribute": "title",
+          "fallback_selector": "h3 a",
+          "type": "string",
+          "required": true
+        },
+        "price": {
+          "selector": "p.price_color",
+          "type": "price",
+          "required": true
+        },
+        "availability": {
+          "selector": "p.instock.availability",
+          "type": "string",
+          "required": false
+        },
+        "rating": {
+          "selector": "p.star-rating",
+          "attribute": "class",
+          "type": "rating",
+          "required": false
+        },
+        "detail_link": {
+          "selector": "h3 a",
+          "attribute": "href",
+          "type": "url",
+          "required": true
+        }
+      },
+      "validation_rules": {
+        "required_fields": ["title", "price", "detail_link"],
+        "price_min": 0.0,
+        "price_max": 10000.0
+      }
+    },
+    {
+      "site_id": "quotes_toscrape",
+      "site_name": "Quotes to Scrape",
+      "base_url": "https://quotes.toscrape.com/",
+      "target_url": "https://quotes.toscrape.com/",
+      "enabled": true,
+      "schedule": "cron(0 6 * * ? *)",
+      "rate_limit_delay_seconds": 1.0,
+      "timeout_seconds": 15,
+      "max_retries": 3,
+      "container_selector": "div.quote",
+      "next_page_selector": "li.next a",
+      "fields": {
+        "quote": {
+          "selector": "span.text",
+          "type": "string",
+          "required": true
+        },
+        "author": {
+          "selector": "small.author",
+          "type": "string",
+          "required": true
+        },
+        "author_url": {
+          "selector": "span a",
+          "attribute": "href",
+          "type": "url",
+          "required": false
+        },
+        "tags": {
+          "selector": "div.tags a.tag",
+          "is_list": true,
+          "type": "string_list",
+          "required": false
+        }
+      },
+      "validation_rules": {
+        "required_fields": ["quote", "author"],
+        "min_quote_length": 5
+      }
+    },
+    {
+      "site_id": "webscraper_laptops",
+      "site_name": "WebScraper Laptops Sandbox",
+      "base_url": "https://webscraper.io/test-sites/e-commerce/allinone/computers/laptops",
+      "target_url": "https://webscraper.io/test-sites/e-commerce/allinone/computers/laptops",
+      "enabled": true,
+      "schedule": "cron(0 18 * * ? *)",
+      "rate_limit_delay_seconds": 1.0,
+      "timeout_seconds": 15,
+      "max_retries": 3,
+      "container_selector": "div.product-wrapper",
+      "fields": {
+        "title": {
+          "selector": "a.title",
+          "attribute": "title",
+          "fallback_selector": "a.title",
+          "type": "string",
+          "required": true
+        },
+        "price": {
+          "selector": "h4.price",
+          "type": "price",
+          "required": true
+        },
+        "description": {
+          "selector": "p.description",
+          "type": "string",
+          "required": false
+        },
+        "rating": {
+          "selector": "div.ratings p[data-rating]",
+          "attribute": "data-rating",
+          "fallback_selector": "div.ratings p",
+          "type": "rating",
+          "required": false
+        },
+        "reviews": {
+          "selector": "div.ratings p.review-count",
+          "type": "string",
+          "required": false
+        },
+        "detail_link": {
+          "selector": "a.title",
+          "attribute": "href",
+          "type": "url",
+          "required": true
+        }
+      },
+      "validation_rules": {
+        "required_fields": ["title", "price", "detail_link"],
+        "price_min": 0.0,
+        "price_max": 50000.0
+      }
+    },
+    {
+      "site_id": "hacker_news",
+      "site_name": "Hacker News Permitted Feed",
+      "base_url": "https://news.ycombinator.com/",
+      "target_url": "https://news.ycombinator.com/",
+      "enabled": true,
+      "schedule": "cron(0 */4 * * ? *)",
+      "rate_limit_delay_seconds": 1.0,
+      "timeout_seconds": 15,
+      "max_retries": 3,
+      "container_selector": "tr.athing",
+      "next_page_selector": "a.morelink",
+      "fields": {
+        "title": {
+          "selector": "span.titleline > a",
+          "type": "string",
+          "required": true
+        },
+        "rank": {
+          "selector": "span.rank",
+          "type": "string",
+          "required": false
+        },
+        "detail_link": {
+          "selector": "span.titleline > a",
+          "attribute": "href",
+          "type": "url",
+          "required": true
+        }
+      },
+      "validation_rules": {
+        "required_fields": ["title", "detail_link"],
+        "min_title_length": 2
+      }
+    }
+  ]
+}
