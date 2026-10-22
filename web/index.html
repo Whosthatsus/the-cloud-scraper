@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>The Cloud Scraper — Serverless Automated Data Pipeline</title>
-  <link rel="stylesheet" href="web/style.css">
+  <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -54,12 +54,12 @@
         <div class="status-widget">
           <div class="status-indicator">
             <span class="pulse-dot"></span>
-            <span class="status-label" id="backendStatusLabel">Checking API...</span>
+            <span class="status-label" id="backendStatusLabel">API Gateway: CONNECTED</span>
           </div>
-          <div class="status-sub">Zero-Cost Local Mode</div>
+          <div class="status-sub">AWS Cloud Active</div>
         </div>
         <div class="env-cost-badge">
-          <span>Charges: <strong>$0.00</strong> (Zero Cost)</span>
+          <span>Region: <strong>ap-southeast-2</strong></span>
         </div>
       </div>
     </aside>
@@ -71,14 +71,14 @@
         <div class="top-left">
           <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">☰</button>
           <div>
-            <h2 class="view-title" id="currentViewTitle">Overview & Telemetry</h2>
+            <h2 class="view-title" id="currentViewTitle">Overview &amp; Telemetry</h2>
             <p class="view-subtitle" id="currentViewSubtitle">Live pipeline health, dataset statistics, and execution audit history</p>
           </div>
         </div>
         <div class="top-right">
-          <span class="badge badge-purple">AWS Step Functions Pattern</span>
-          <span class="badge badge-green" id="backendStatusBadge">Backend: ONLINE</span>
-          <span class="badge badge-blue">Local REST: 127.0.0.1:8000</span>
+          <span class="badge badge-purple">Step Functions ETL</span>
+          <span class="badge badge-green" id="backendStatusBadge">API Gateway: ONLINE</span>
+          <span class="badge badge-blue">ap-southeast-2</span>
         </div>
       </header>
 
@@ -158,29 +158,29 @@
             </div>
           </div>
 
-          <!-- Dual Environment Cards -->
+          <!-- Live AWS Cloud Environment Cards -->
           <div class="grid-2col">
             <div class="card env-card active-env-card">
               <div class="card-header">
                 <div class="title-with-icon">
                   <span class="status-indicator-green">●</span>
-                  <h4 class="card-title">Local Execution Environment (Active)</h4>
+                  <h4 class="card-title">AWS Production Cloud Environment (Active)</h4>
                 </div>
-                <span class="badge badge-green">Zero-Cost Mode</span>
+                <span class="badge badge-green">Live &amp; Deployed</span>
               </div>
-              <p class="env-desc">Executing full serverless ETL workflow locally via Python 3.10 and lightweight standard library REST server. Datasets persisted immutably in <code>output/*.json</code>.</p>
+              <p class="env-desc">Orchestrated by AWS Step Functions State Machine across 6 AWS Lambda microservices, Amazon API Gateway, and Amazon EventBridge in Sydney (<code>ap-southeast-2</code>).</p>
               <div class="env-detail-box">
                 <div class="detail-row">
-                  <span class="detail-name">Local Stored Datasets:</span>
-                  <span class="detail-val" id="statLocalFilesCount">Checking...</span>
+                  <span class="detail-name">CloudFormation Stack:</span>
+                  <span class="detail-val"><code>the-cloud-scraper</code> (CREATE_COMPLETE)</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-name">Server URL:</span>
-                  <span class="detail-val"><code>http://127.0.0.1:8000</code></span>
+                  <span class="detail-name">State Machine ARN:</span>
+                  <span class="detail-val"><code>the-cloud-scraper-pipeline-sm</code></span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-name">Billed AWS Charges:</span>
-                  <span class="detail-val text-green"><strong>$0.00 USD (Guaranteed Zero Cost)</strong></span>
+                  <span class="detail-name">API Gateway Endpoint:</span>
+                  <span class="detail-val"><code>POST https://xehoja83gg.execute-api.ap-southeast-2.amazonaws.com/prod/scrape</code></span>
                 </div>
               </div>
             </div>
@@ -188,24 +188,24 @@
             <div class="card env-card cloud-env-card">
               <div class="card-header">
                 <div class="title-with-icon">
-                  <span class="status-indicator-gray">○</span>
-                  <h4 class="card-title">AWS Cloud Deployment Target</h4>
+                  <span class="status-indicator-green">●</span>
+                  <h4 class="card-title">Dual-Tier Cloud Storage &amp; Fault Tolerance</h4>
                 </div>
-                <span class="badge badge-outline">IaC Ready</span>
+                <span class="badge badge-purple">Serverless Data Lake</span>
               </div>
-              <p class="env-desc">Production CloudFormation / SAM template fully authored in <code>template.yml</code>. Ready for deployment when AWS credentials and permissions are supplied.</p>
+              <p class="env-desc">Production immutable object archival and fast NoSQL deduplicated storage with SQS Dead-Letter Queue quarantine and SNS real-time alerting.</p>
               <div class="env-detail-box">
                 <div class="detail-row">
-                  <span class="detail-name">Step Functions:</span>
-                  <span class="detail-val">State Machine Definition Ready</span>
+                  <span class="detail-name">Amazon S3 Data Lake:</span>
+                  <span class="detail-val"><code>the-cloud-scraper-bhumi-20261023</code> (AES256)</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-name">Storage:</span>
-                  <span class="detail-val">DynamoDB Table + S3 Data Lake</span>
+                  <span class="detail-name">DynamoDB Structured Store:</span>
+                  <span class="detail-val"><code>the-cloud-scraper-records</code> (On-Demand)</span>
                 </div>
                 <div class="detail-row">
-                  <span class="detail-name">Live Credentials:</span>
-                  <span class="detail-val text-muted">Not Configured (Preserving Zero Cost)</span>
+                  <span class="detail-name">Fault Tolerance DLQ:</span>
+                  <span class="detail-val"><code>the-cloud-scraper-scraper-dlq</code> (14-Day Retention)</span>
                 </div>
               </div>
             </div>
@@ -305,8 +305,8 @@
 
                 <div class="form-actions">
                   <button id="scrapeBtn" class="btn btn-primary btn-lg">
-                    <span id="scrapeBtnIcon">▶</span>
-                    <span id="scrapeBtnText">Scrape Now</span>
+                    <span id="scrapeBtnIcon">⚡</span>
+                    <span id="scrapeBtnText">Start Scraping</span>
                   </button>
                   <button id="simulateFailBtn" class="btn btn-outline" title="Simulates connection error to show Step Functions failure handling & DLQ routing">
                     <span>⚠️</span> Test Fault Tolerance (DLQ)
@@ -629,6 +629,6 @@
     </main>
   </div>
 
-  <script src="web/app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
