@@ -257,22 +257,114 @@
               <!-- Left Form Controls -->
               <div class="form-col">
                 <div class="form-group">
-                  <label for="siteSelector" class="form-label">Target Website / Open Feed</label>
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <label for="siteSelector" class="form-label">Target Website / Data Source</label>
+                    <button type="button" class="chip-btn" id="toggleCustomTargetBtn">⚙ Configure Custom Target</button>
+                  </div>
                   <select id="siteSelector" class="form-control">
-                    <option value="books_toscrape" selected>Books to Scrape (https://books.toscrape.com/)</option>
-                    <option value="quotes_toscrape">Quotes to Scrape (https://quotes.toscrape.com/)</option>
-                    <option value="webscraper_laptops">WebScraper Laptops Sandbox (117 test products)</option>
-                    <option value="hacker_news">Hacker News Permitted Feed (30 frontpage stories)</option>
+                    <optgroup label="Default Permitted Sandboxes">
+                      <option value="books_toscrape" selected>Books to Scrape (https://books.toscrape.com/)</option>
+                      <option value="quotes_toscrape">Quotes to Scrape (https://quotes.toscrape.com/)</option>
+                      <option value="webscraper_laptops">WebScraper Laptops Sandbox (117 test products)</option>
+                      <option value="hacker_news">Hacker News Permitted Feed (30 frontpage stories)</option>
+                    </optgroup>
+                    <optgroup label="Live Scraped Sources (AWS DynamoDB)" id="dynamicTargetsOptgroup">
+                      <option value="hacker_news_live">Hacker News Live (news.ycombinator.com)</option>
+                      <option value="travel_books_generic">Travel Books (Generic Mode)</option>
+                    </optgroup>
+                    <optgroup label="Custom On-The-Fly">
+                      <option value="custom_url_target">+ Enter New Custom Target / URL...</option>
+                    </optgroup>
                   </select>
                   <small class="form-hint" id="siteHint">Books to Scrape: E-commerce sandbox evaluating product titles, prices in GBP, and 1-5 star ratings.</small>
                 </div>
 
+                <!-- Quick Presets -->
                 <div class="form-group">
-                  <label for="customUrlInput" class="form-label">
-                    Custom Target URL <span class="label-optional">(Optional — Supported Permitted Domains Only)</span>
-                  </label>
-                  <input type="url" id="customUrlInput" class="form-control" placeholder="Leave blank to use default configured URL">
-                  <small class="form-hint">Backend strictly enforces SSRF protection (private IP ranges, localhost, and AWS metadata 169.254.169.254 are blocked).</small>
+                  <label class="form-label" style="font-size:0.75rem; color:var(--text-dim);">Quick Target Presets:</label>
+                  <div class="quick-presets-bar">
+                    <button type="button" class="chip-btn" id="presetBooksBtn">📚 Books Sandbox</button>
+                    <button type="button" class="chip-btn" id="presetQuotesBtn">💬 Quotes Sandbox</button>
+                    <button type="button" class="chip-btn" id="presetHnBtn">🔥 Hacker News Live</button>
+                    <button type="button" class="chip-btn" id="presetTravelBtn">✈️ Travel Books (Generic)</button>
+                    <button type="button" class="chip-btn" id="presetCustomBtn">🌐 New Custom URL</button>
+                  </div>
+                </div>
+
+                <!-- Custom Target Builder Box (collapsible / dynamic) -->
+                <div class="custom-target-box" id="customTargetBox" style="display: none;">
+                  <div class="custom-target-header">
+                    <span class="custom-target-title"><span>🛠️</span> General-Purpose Target Configurator</span>
+                    <span class="badge badge-blue">Zero Code Required</span>
+                  </div>
+
+                  <div class="form-row-2">
+                    <div class="form-group">
+                      <label for="customTargetIdInput" class="form-label">Target ID / Slug</label>
+                      <input type="text" id="customTargetIdInput" class="form-control" placeholder="e.g. my_news_feed" pattern="[a-zA-Z0-9_-]+">
+                      <small class="form-hint">Unique identifier for DynamoDB and S3 partitions.</small>
+                    </div>
+                    <div class="form-group">
+                      <label for="customTargetNameInput" class="form-label">Target Display Name</label>
+                      <input type="text" id="customTargetNameInput" class="form-control" placeholder="e.g. Technology News Feed">
+                      <small class="form-hint">Human-readable label for dashboard.</small>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="customUrlInput" class="form-label">Target Website URL <span class="label-optional">(HTTP / HTTPS)</span></label>
+                    <input type="url" id="customUrlInput" class="form-control" placeholder="https://example.com/items">
+                    <small class="form-hint">Backend strictly enforces SSRF protection (localhost and private subnets are blocked).</small>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label">Extraction Strategy</label>
+                    <div class="radio-options">
+                      <label class="radio-label">
+                        <input type="radio" name="extractionMode" value="generic" checked>
+                        <span><strong>Automatic Generic Extraction (Recommended)</strong> — Heuristically extracts cards, article containers, headings, links, and paragraphs without requiring custom CSS selectors.</span>
+                      </label>
+                      <label class="radio-label">
+                        <input type="radio" name="extractionMode" value="custom">
+                        <span><strong>Configurable CSS Selectors</strong> — Target specific HTML DOM elements using CSS selectors and attribute lookups.</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- CSS Selectors Input Panel -->
+                  <div id="cssSelectorsPanel" style="display: none; flex-direction:column; gap:0.75rem; background:var(--bg-input); padding:0.85rem; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
+                    <div class="form-group">
+                      <label for="customContainerSelector" class="form-label">Item Container Selector</label>
+                      <input type="text" id="customContainerSelector" class="form-control" placeholder="e.g. tr.athing, article.post, div.product-wrapper">
+                      <small class="form-hint">CSS selector matching each repeating item card on the page.</small>
+                    </div>
+                    <div class="form-row-2">
+                      <div class="form-group">
+                        <label for="customTitleSelector" class="form-label">Title / Heading Selector</label>
+                        <input type="text" id="customTitleSelector" class="form-control" placeholder="e.g. span.titleline > a, h2.title">
+                      </div>
+                      <div class="form-group">
+                        <label for="customLinkSelector" class="form-label">Detail Link Selector</label>
+                        <input type="text" id="customLinkSelector" class="form-control" placeholder="e.g. a@href, span.titleline > a">
+                      </div>
+                    </div>
+                    <div class="form-row-2">
+                      <div class="form-group">
+                        <label for="customExtraFieldKey" class="form-label">Optional Field 3 Name</label>
+                        <input type="text" id="customExtraFieldKey" class="form-control" placeholder="e.g. author, price, rank">
+                      </div>
+                      <div class="form-group">
+                        <label for="customExtraFieldSelector" class="form-label">Optional Field 3 Selector</label>
+                        <input type="text" id="customExtraFieldSelector" class="form-control" placeholder="e.g. small.author, h4.price, span.rank">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="display:flex; justify-content:flex-end;">
+                    <button type="button" class="btn btn-sm btn-outline" id="saveTargetBtn">
+                      <span>💾</span> Save Target to Cloud Registry (DynamoDB)
+                    </button>
+                  </div>
                 </div>
 
                 <div class="form-row-2">
@@ -289,26 +381,15 @@
                   </div>
                 </div>
 
-                <div class="form-group">
-                  <label class="form-label">Execution Source Mode</label>
-                  <div class="radio-options">
-                    <label class="radio-label">
-                      <input type="radio" name="sourceMode" value="live" checked>
-                      <span><strong>Live Web Scraping</strong> — Real HTTP requests with rate limiting &amp; robots.txt compliance</span>
-                    </label>
-                    <label class="radio-label">
-                      <input type="radio" name="sourceMode" value="fixture">
-                      <span><strong>Offline Controlled Fixture</strong> — Deterministic HTML test suite (zero internet requirement)</span>
-                    </label>
-                  </div>
-                </div>
-
                 <div class="form-actions">
                   <button id="scrapeBtn" class="btn btn-primary btn-lg">
                     <span id="scrapeBtnIcon">⚡</span>
                     <span id="scrapeBtnText">Start Scraping</span>
                   </button>
-                  <button id="simulateFailBtn" class="btn btn-outline" title="Simulates connection error to show Step Functions failure handling & DLQ routing">
+                  <button id="testSsrfBtn" class="btn btn-danger btn-sm" title="Demonstrates instant rejection of SSRF attempts (Test F)">
+                    <span>🛡️</span> Test SSRF Guardrail
+                  </button>
+                  <button id="simulateFailBtn" class="btn btn-warning btn-sm" title="Dispatches invalid 404 target to show Step Functions catch block & SQS DLQ routing (Test E)">
                     <span>⚠️</span> Test Fault Tolerance (DLQ)
                   </button>
                 </div>
@@ -316,17 +397,24 @@
 
               <!-- Right Side Info Card -->
               <div class="workspace-info-card">
-                <h4 class="info-card-title">Security &amp; Ethical Scraping Policy</h4>
+                <h4 class="info-card-title">Security &amp; General-Purpose Scraping Engine</h4>
                 <ul class="info-list">
+                  <li><strong>Universal URL Support:</strong> Scrapes any public website (news, e-commerce, articles, quotes, test sandboxes).</li>
                   <li><strong>Robots.txt Checked:</strong> Automated verification before every fetch.</li>
                   <li><strong>SSRF Hardened:</strong> Localhost, RFC 1918 subnets, and AWS IMDS endpoints strictly denied.</li>
-                  <li><strong>Rate Throttling:</strong> Built-in polite delay between paginated requests.</li>
-                  <li><strong>Zero Private Data:</strong> Only extracts public non-sensitive catalog items.</li>
+                  <li><strong>Dual Mode Extraction:</strong> Automatic DOM heuristic detection OR custom CSS selector extraction.</li>
+                  <li><strong>Deterministic Deduplication:</strong> SHA-256 fingerprinting prevents duplicate records.</li>
+                  <li><strong>Zero Stalling:</strong> State machine traps failures and routes payload to SQS DLQ.</li>
                 </ul>
 
                 <div class="active-source-badge-box">
-                  <span class="badge-box-label">Current Target URL:</span>
+                  <span class="badge-box-label">Active Target URL:</span>
                   <code id="activeTargetUrlPreview">https://books.toscrape.com/catalogue/page-1.html</code>
+                </div>
+
+                <div class="active-source-badge-box">
+                  <span class="badge-box-label">Extraction Strategy:</span>
+                  <span class="badge badge-purple" id="activeStrategyBadge">Configured Site Profile</span>
                 </div>
               </div>
             </div>
@@ -383,7 +471,15 @@
                 <span class="badge badge-blue" id="tableCountBadge">0 records</span>
               </div>
               <div class="table-actions">
-                <input type="text" id="tableSearchInput" class="table-search" placeholder="Search title, price, author...">
+                <label for="resultsDatasetSelector" style="font-size:0.8rem; color:var(--text-dim); margin-right:-0.3rem;">Dataset:</label>
+                <select id="resultsDatasetSelector" class="form-control form-control-sm">
+                  <option value="books_toscrape">Books to Scrape</option>
+                  <option value="quotes_toscrape">Quotes to Scrape</option>
+                  <option value="hacker_news_live">Hacker News Live</option>
+                  <option value="travel_books_generic">Travel Books (Generic)</option>
+                </select>
+                <button id="refreshResultsBtn" class="btn btn-sm btn-outline" title="Fetch latest persisted records from DynamoDB">🔄 Refresh DynamoDB</button>
+                <input type="text" id="tableSearchInput" class="table-search" placeholder="Search title, price, content...">
                 <select id="pageSizeSelector" class="form-control form-control-sm">
                   <option value="10">10 / page</option>
                   <option value="25" selected>25 / page</option>
@@ -490,59 +586,66 @@
             </div>
 
             <div class="storage-grid">
-              <!-- Tier 1: Local Immutable JSON Archive -->
-              <div class="storage-box storage-local">
+              <!-- Tier 1: Production AWS Cloud Dual-Tier Storage (Active) -->
+              <div class="storage-box storage-local" style="border-color: rgba(34, 197, 94, 0.4);">
                 <div class="storage-box-header">
                   <span class="status-indicator-green">●</span>
-                  <strong>Active Local Immutable Storage (Tier 1)</strong>
+                  <strong>AWS Production Cloud Storage (Active &amp; Deployed)</strong>
                 </div>
                 <p class="storage-desc">
-                  To guarantee $0.00 cloud expenses, all transformed records and audit logs are saved locally inside the project's <code>output/</code> directory.
+                  Dual-tier serverless cloud storage in <code>ap-southeast-2</code> with immutable raw snapshot archiving and fast, deduplicated structured NoSQL querying.
+                </p>
+                <ul class="cloud-targets-list" style="margin-top:0.75rem;">
+                  <li>
+                    <div>
+                      <strong>Amazon S3 Data Lake (Raw HTML Archive):</strong>
+                      <code>s3://the-cloud-scraper-bhumi-20261023/raw/{site_id}/{timestamp}/page.html</code>
+                    </div>
+                    <span class="tag tag-green">Active (AES-256)</span>
+                  </li>
+                  <li>
+                    <div>
+                      <strong>Amazon S3 Transformed Clean Datasets:</strong>
+                      <code>s3://the-cloud-scraper-bhumi-20261023/transform/{site_id}/{timestamp}/records.json</code>
+                    </div>
+                    <span class="tag tag-green">Active (AES-256)</span>
+                  </li>
+                  <li>
+                    <div>
+                      <strong>Amazon DynamoDB Structured NoSQL Store:</strong>
+                      <code>the-cloud-scraper-records</code> (PK: <code>site_id</code>, SK: <code>record_id</code>)
+                    </div>
+                    <span class="tag tag-green">Active (On-Demand)</span>
+                  </li>
+                  <li>
+                    <div>
+                      <strong>Amazon SQS Dead-Letter Queue (DLQ):</strong>
+                      <code>the-cloud-scraper-scraper-dlq</code> (14-day retention quarantine)
+                    </div>
+                    <span class="tag tag-purple">Active (Fault Tolerant)</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- Tier 2: Local Immutable Storage & Export -->
+              <div class="storage-box storage-cloud">
+                <div class="storage-box-header">
+                  <span class="status-indicator-green">●</span>
+                  <strong>Client Dataset Inspection &amp; Direct Export</strong>
+                </div>
+                <p class="storage-desc">
+                  Instant client-side RFC 4180 CSV and formatted JSON export directly from the live DynamoDB records loaded into memory.
                 </p>
                 <div class="storage-path-box">
-                  <code>Path: <span id="localFilePath">output/books_toscrape.json</span></code>
+                  <code>Selected Target: <span id="localFilePath">DynamoDB: the-cloud-scraper-records</span></code>
                 </div>
                 <div class="storage-files-preview" id="storageFilesPreview">
                   <!-- Rendered dynamically -->
                 </div>
                 <div class="storage-action">
-                  <a id="downloadLocalBtn" class="btn btn-sm btn-primary" href="/api/download/books_toscrape">⬇ Download Active Dataset (.json)</a>
-                  <a id="downloadCsvLocalBtn" class="btn btn-sm btn-outline" href="/api/download/books_toscrape?format=csv">⬇ Download CSV (.csv)</a>
+                  <button id="downloadLocalBtn" class="btn btn-sm btn-primary">⬇ Download Active Dataset (.json)</button>
+                  <button id="downloadCsvLocalBtn" class="btn btn-sm btn-outline">⬇ Download CSV (.csv)</button>
                 </div>
-              </div>
-
-              <!-- Tier 2: Cloud S3 & DynamoDB Target -->
-              <div class="storage-box storage-cloud">
-                <div class="storage-box-header">
-                  <span class="status-indicator-gray">○</span>
-                  <strong>AWS Cloud Storage Target (Tier 2 — Inactive in Local Mode)</strong>
-                </div>
-                <p class="storage-desc">
-                  The production cloud integration is fully coded in <code>lambda/dynamodb_store.py</code> and provisioned in <code>template.yml</code>, but safely bypassed because no AWS credentials were provided.
-                </p>
-                <ul class="cloud-targets-list">
-                  <li>
-                    <div>
-                      <strong>Amazon S3 Raw Snapshots:</strong>
-                      <code>raw/{site_id}/{timestamp}/page.html</code>
-                    </div>
-                    <span class="tag tag-gray">Not Uploaded ($0.00 Mode)</span>
-                  </li>
-                  <li>
-                    <div>
-                      <strong>Amazon S3 Clean JSON:</strong>
-                      <code>transform/{site_id}/records.json</code>
-                    </div>
-                    <span class="tag tag-gray">Not Uploaded ($0.00 Mode)</span>
-                  </li>
-                  <li>
-                    <div>
-                      <strong>Amazon DynamoDB Table:</strong>
-                      <code>TheCloudScraper-Records</code>
-                    </div>
-                    <span class="tag tag-gray">Conditional Writes Ready</span>
-                  </li>
-                </ul>
               </div>
             </div>
           </div>

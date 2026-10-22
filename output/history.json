@@ -1,5 +1,65 @@
 [
   {
+    "execution_id": "test-exec-12345",
+    "timestamp": "2026-10-22T01:00:00Z",
+    "site_id": "books_toscrape",
+    "status": "SUCCESS",
+    "duration": 1.25,
+    "scraped": 20,
+    "valid": 20,
+    "duplicates_removed": 0,
+    "transformed": 20,
+    "cost_usd": 8.5e-05
+  },
+  {
+    "execution_id": "test-exec-12345",
+    "timestamp": "2026-10-22T01:00:00Z",
+    "site_id": "books_toscrape",
+    "status": "SUCCESS",
+    "duration": 1.25,
+    "scraped": 20,
+    "valid": 20,
+    "duplicates_removed": 0,
+    "transformed": 20,
+    "cost_usd": 8.5e-05
+  },
+  {
+    "execution_id": "test-exec-12345",
+    "timestamp": "2026-10-22T01:00:00Z",
+    "site_id": "books_toscrape",
+    "status": "SUCCESS",
+    "duration": 1.25,
+    "scraped": 20,
+    "valid": 20,
+    "duplicates_removed": 0,
+    "transformed": 20,
+    "cost_usd": 8.5e-05
+  },
+  {
+    "execution_id": "test-exec-12345",
+    "timestamp": "2026-10-22T01:00:00Z",
+    "site_id": "books_toscrape",
+    "status": "SUCCESS",
+    "duration": 1.25,
+    "scraped": 20,
+    "valid": 20,
+    "duplicates_removed": 0,
+    "transformed": 20,
+    "cost_usd": 8.5e-05
+  },
+  {
+    "execution_id": "test-exec-12345",
+    "timestamp": "2026-10-22T01:00:00Z",
+    "site_id": "books_toscrape",
+    "status": "SUCCESS",
+    "duration": 1.25,
+    "scraped": 20,
+    "valid": 20,
+    "duplicates_removed": 0,
+    "transformed": 20,
+    "cost_usd": 8.5e-05
+  },
+  {
     "execution_id": "exec-1792615455-0af804",
     "timestamp": "2026-10-21T20:44:15.270999+00:00",
     "site_id": "books_toscrape",

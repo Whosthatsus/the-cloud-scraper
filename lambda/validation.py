@@ -1,7 +1,8 @@
 """
 The Cloud Scraper - Data Validation and Cleaning Lambda Function
 Validates scraped records against declarative schema rules, filters
-malformed records, and enforces data quality standards before transformation.
+malformed records, supports generic HTML record validation,
+and enforces data quality standards before transformation.
 """
 
 import os
@@ -50,7 +51,7 @@ def validate_single_record(
     record: Dict[str, Any], validation_rules: Dict[str, Any]
 ) -> Tuple[bool, List[str]]:
     """
-    Validate an individual record against declarative rules.
+    Validate an individual record against declarative rules or generic criteria.
     Returns (is_valid, list_of_error_reasons).
     """
     errors = []
@@ -60,10 +61,19 @@ def validate_single_record(
 
     # 1. Required fields check
     required_fields = validation_rules.get("required_fields", [])
-    for field in required_fields:
-        val = record.get(field)
-        if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and len(val) == 0):
-            errors.append(f"Missing or empty required field: '{field}'")
+    if required_fields:
+        for field in required_fields:
+            val = record.get(field)
+            if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and len(val) == 0):
+                errors.append(f"Missing or empty required field: '{field}'")
+    else:
+        # Generic record validation: check that record has at least one meaningful field
+        has_substance = any(
+            bool(record.get(k))
+            for k in ("title", "text", "summary", "quote", "url", "detail_link", "name", "author")
+        )
+        if not has_substance:
+            errors.append("Record contains no identifiable content, title, text, or URL.")
 
     # 2. URL fields validation
     for key, val in record.items():
@@ -132,6 +142,7 @@ def lambda_handler(event, context=None):
 
     site_id = event.get("site_id", "unknown_site")
     raw_records = event.get("records", [])
+    config_override = event.get("config_override")
 
     if not raw_records:
         logger.error("No records received in validation event for site: %s", site_id)
@@ -146,12 +157,16 @@ def lambda_handler(event, context=None):
             "invalid_count": 0,
             "records": [],
             "invalid_records": [],
+            "config_override": config_override,
         }
 
-    # Load validation rules for this site
-    validation_rules = load_validation_rules(site_id)
-    # Allow override in event if present
-    if "validation_rules" in event:
+    # Load validation rules from config_override or local config
+    validation_rules = {}
+    if config_override and isinstance(config_override, dict):
+        validation_rules = dict(config_override.get("validation_rules", {}))
+    if not validation_rules:
+        validation_rules = load_validation_rules(site_id)
+    if "validation_rules" in event and isinstance(event["validation_rules"], dict):
         validation_rules.update(event["validation_rules"])
 
     valid_records, invalid_records = filter_and_validate_records(raw_records, validation_rules)
@@ -185,6 +200,8 @@ def lambda_handler(event, context=None):
             "invalid_count": invalid_count,
             "records": [],
             "invalid_records": invalid_records,
+            "config_override": config_override,
+            "extraction_type": event.get("extraction_type", "generic"),
         }
 
     return {
@@ -201,11 +218,12 @@ def lambda_handler(event, context=None):
         "invalid_count": invalid_count,
         "records": valid_records,
         "invalid_records": invalid_records,
+        "config_override": config_override,
+        "extraction_type": event.get("extraction_type", "generic"),
     }
 
 
 if __name__ == "__main__":
-    # Test validation locally
     sample_records = [
         {
             "title": "A Light in the Attic",

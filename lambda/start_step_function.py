@@ -1,33 +1,52 @@
 """
-The Cloud Scraper - Job Dispatcher Lambda Function
+The Cloud Scraper - Job Dispatcher & REST API Controller Lambda Function
 Accepts scheduled events from Amazon EventBridge, on-demand REST API requests
-from Amazon API Gateway, or batch messages from Amazon SQS, and initiates
-AWS Step Functions State Machine executions.
+from Amazon API Gateway, or batch messages from Amazon SQS.
 
-When multiple sites are scheduled, optionally distributes individual site jobs
-to an Amazon SQS queue for decoupled execution and throttling.
+Initiates AWS Step Functions State Machine executions, describes execution status,
+persists/retrieves target website configurations in Amazon DynamoDB,
+and returns actual persisted scraped records.
 """
 
 import os
+import re
 import json
 import uuid
 import logging
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError, NoRegionError
+
+import dynamodb_store
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "us-east-1"))
+DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "ap-southeast-2"))
+
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+}
 
 
-def is_running_in_aws() -> bool:
-    """Detect whether code is running inside an active AWS Lambda execution environment."""
-    return bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get("AWS_EXECUTION_ENV"))
+def sanitize_site_id(name_or_url: str) -> str:
+    """Generate a valid, collision-resistant site_id slug."""
+    if not name_or_url:
+        return f"custom_{uuid.uuid4().hex[:6]}"
+    # Extract domain if URL
+    if "://" in name_or_url:
+        parsed = urlparse(name_or_url)
+        name_or_url = parsed.netloc.replace(".", "_") + parsed.path.replace("/", "_")
+    slug = re.sub(r"[^a-zA-Z0-9_]+", "_", name_or_url).strip("_").lower()
+    return slug[:40] or f"custom_{uuid.uuid4().hex[:6]}"
 
 
 def get_enabled_sites() -> list:
+    """List site IDs configured in local config/sites_config.json."""
     candidate_paths = [
         os.environ.get("SITES_CONFIG_PATH"),
         os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
@@ -45,26 +64,68 @@ def get_enabled_sites() -> list:
     return ["books_toscrape", "quotes_toscrape"]
 
 
+def get_default_site_configs() -> list:
+    """Read default predefined sites from config/sites_config.json."""
+    candidate_paths = [
+        os.environ.get("SITES_CONFIG_PATH"),
+        os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
+        os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
+        os.path.join(os.getcwd(), "config", "sites_config.json"),
+    ]
+    for cp in candidate_paths:
+        if cp and os.path.exists(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("sites", [])
+            except Exception as e:
+                logger.warning("Could not read default site configs: %s", str(e))
+    return []
+
+
 def parse_incoming_event(event: dict) -> list:
     """
     Parse event to extract list of target site job configurations.
-    Supports EventBridge, API Gateway, SQS, and direct invocation.
+    Supports API Gateway POST, EventBridge, SQS, and direct invocations.
     """
     jobs = []
 
     # 1. API Gateway REST trigger
-    if "body" in event and isinstance(event.get("body"), str):
-        try:
-            body = json.loads(event["body"])
+    if "body" in event and event.get("body"):
+        body = event["body"]
+        if isinstance(body, str):
+            try:
+                body = json.loads(body)
+            except Exception:
+                body = {}
+
+        if isinstance(body, dict):
+            # Check if this is a save_target action
+            if body.get("action") == "save_target":
+                return []
+
+            target_url = body.get("target_url")
             site_id = body.get("site_id")
-            if site_id:
-                jobs.append({
-                    "site_id": site_id,
-                    "target_url": body.get("target_url"),
+            if not site_id and target_url:
+                site_id = sanitize_site_id(body.get("site_name") or target_url)
+
+            if site_id or target_url:
+                job_cfg = {
+                    "site_id": site_id or "books_toscrape",
+                    "site_name": body.get("site_name", site_id),
+                    "target_url": target_url,
+                    "extraction_type": body.get("extraction_type", "generic" if not body.get("container_selector") else "custom"),
+                    "container_selector": body.get("container_selector"),
+                    "next_page_selector": body.get("next_page_selector"),
+                    "fields": body.get("fields", {}),
+                    "validation_rules": body.get("validation_rules", {}),
+                    "page_limit": body.get("page_limit", 1),
+                    "timeout_seconds": body.get("timeout_seconds", 15),
                     "triggered_by": "api_gateway",
-                })
-        except Exception:
-            pass
+                }
+                if body.get("config_override"):
+                    job_cfg["config_override"] = body["config_override"]
+                jobs.append(job_cfg)
 
     # 2. SQS trigger
     elif "Records" in event and event["Records"] and "s3" not in event["Records"][0]:
@@ -72,20 +133,39 @@ def parse_incoming_event(event: dict) -> list:
             try:
                 body = json.loads(rec.get("body", "{}"))
                 site_id = body.get("site_id")
+                if not site_id and body.get("target_url"):
+                    site_id = sanitize_site_id(body.get("target_url"))
                 if site_id:
                     jobs.append({
                         "site_id": site_id,
+                        "site_name": body.get("site_name", site_id),
                         "target_url": body.get("target_url"),
+                        "extraction_type": body.get("extraction_type", "generic"),
+                        "container_selector": body.get("container_selector"),
+                        "fields": body.get("fields", {}),
+                        "page_limit": body.get("page_limit", 1),
+                        "timeout_seconds": body.get("timeout_seconds", 15),
                         "triggered_by": "sqs_queue",
                     })
             except Exception:
                 pass
 
     # 3. Direct or EventBridge trigger specifying a site
-    elif "site_id" in event:
+    elif "site_id" in event or "target_url" in event:
+        target_url = event.get("target_url")
+        site_id = event.get("site_id")
+        if not site_id and target_url:
+            site_id = sanitize_site_id(event.get("site_name") or target_url)
+
         jobs.append({
-            "site_id": event["site_id"],
-            "target_url": event.get("target_url"),
+            "site_id": site_id or "books_toscrape",
+            "site_name": event.get("site_name", site_id),
+            "target_url": target_url,
+            "extraction_type": event.get("extraction_type", "generic"),
+            "container_selector": event.get("container_selector"),
+            "fields": event.get("fields", {}),
+            "page_limit": event.get("page_limit", 1),
+            "timeout_seconds": event.get("timeout_seconds", 15),
             "triggered_by": "direct" if "source" not in event else "eventbridge",
         })
 
@@ -124,7 +204,8 @@ def enqueue_job_to_sqs(queue_url: str, job_input: dict) -> dict:
 
 def start_state_machine_execution(state_machine_arn: str, job_input: dict) -> dict:
     """Start an execution of the Step Functions State Machine."""
-    execution_name = f"scrape-{job_input['site_id']}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    clean_site_id = re.sub(r"[^a-zA-Z0-9_-]", "-", job_input["site_id"])[:35]
+    execution_name = f"scrape-{clean_site_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
     job_input["execution_id"] = execution_name
     job_input["dispatched_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -163,10 +244,49 @@ def start_state_machine_execution(state_machine_arn: str, job_input: dict) -> di
         }
 
 
+def describe_sfn_execution(execution_arn: str) -> dict:
+    """Describe a Step Functions execution to return its real status, timestamps, and output."""
+    if not execution_arn:
+        return {"status": "UNKNOWN", "error": "No execution_arn provided"}
+
+    if "simulated" in execution_arn:
+        return {
+            "executionArn": execution_arn,
+            "status": "SUCCEEDED",
+            "startDate": datetime.now(timezone.utc).isoformat(),
+            "stopDate": datetime.now(timezone.utc).isoformat(),
+            "output": {"status": "SUCCESS", "records_count": 20},
+        }
+
+    try:
+        sfn_client = boto3.client("stepfunctions", region_name=DEFAULT_REGION)
+        desc = sfn_client.describe_execution(executionArn=execution_arn)
+        output_data = None
+        if desc.get("output"):
+            try:
+                output_data = json.loads(desc["output"])
+            except Exception:
+                output_data = desc["output"]
+
+        return {
+            "executionArn": desc.get("executionArn"),
+            "executionName": desc.get("name"),
+            "status": desc.get("status"),
+            "startDate": str(desc.get("startDate")),
+            "stopDate": str(desc.get("stopDate")),
+            "output": output_data,
+            "error": desc.get("error"),
+            "cause": desc.get("cause"),
+        }
+    except Exception as e:
+        logger.error("Failed describing Step Functions execution %s: %s", execution_arn, str(e))
+        return {"status": "ERROR", "executionArn": execution_arn, "error": str(e)}
+
+
 def lambda_handler(event, context=None):
     """
-    AWS Lambda Handler for Job Dispatching.
-    Initiates Step Functions execution for target websites.
+    AWS Lambda Handler for Job Dispatching and API Controller.
+    Supports GET (status, results, targets, metrics) and POST (start scrape, save target).
     """
     logger.info("Dispatcher received event: %s", json.dumps(event))
 
@@ -175,6 +295,139 @@ def lambda_handler(event, context=None):
     dynamodb_table = os.environ.get("DYNAMODB_TABLE_NAME", "TheCloudScraper-Records")
     queue_url = os.environ.get("SQS_QUEUE_URL", "")
 
+    http_method = event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method", "")
+    http_method = http_method.upper() if http_method else ""
+
+    # Handle CORS OPTIONS preflight
+    if http_method == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({"status": "OK"}),
+        }
+
+    # =========================================================================
+    # Handle GET requests: execution status, live results, targets, overview
+    # =========================================================================
+    if http_method == "GET":
+        query_params = event.get("queryStringParameters") or {}
+        execution_arn = query_params.get("execution_arn")
+        action = query_params.get("action", "").lower()
+
+        # 1. Execution status lookup
+        if execution_arn or action == "status":
+            arn = execution_arn or query_params.get("arn")
+            result = describe_sfn_execution(arn)
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps(result),
+            }
+
+        # 2. Persisted records lookup from DynamoDB
+        if action == "results":
+            site_id = query_params.get("site_id", "")
+            limit = int(query_params.get("limit", 100))
+            records = dynamodb_store.get_stored_records(dynamodb_table, site_id=site_id, limit=limit)
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({
+                    "status": "SUCCESS",
+                    "site_id": site_id or "all",
+                    "count": len(records),
+                    "records": records,
+                }),
+            }
+
+        # 3. Targets lookup: DynamoDB stored targets + default sites
+        if action == "targets":
+            custom_targets = dynamodb_store.list_target_configs(dynamodb_table)
+            default_sites = get_default_site_configs()
+            # Combine targets, prioritizing DynamoDB
+            seen_ids = set()
+            all_targets = []
+            for ct in custom_targets:
+                seen_ids.add(ct["site_id"])
+                all_targets.append(ct)
+            for ds in default_sites:
+                if ds.get("site_id") not in seen_ids:
+                    seen_ids.add(ds["site_id"])
+                    all_targets.append(ds)
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({
+                    "status": "SUCCESS",
+                    "count": len(all_targets),
+                    "targets": all_targets,
+                }),
+            }
+
+        # 4. Metrics & telemetry overview
+        if action == "metrics" or action == "overview":
+            dlq_url = os.environ.get("SQS_DLQ_URL", "")
+            dlq_count = 0
+            if dlq_url:
+                try:
+                    sqs = boto3.client("sqs", region_name=DEFAULT_REGION)
+                    attrs = sqs.get_queue_attributes(QueueUrl=dlq_url, AttributeNames=["ApproximateNumberOfMessages"])
+                    dlq_count = int(attrs.get("Attributes", {}).get("ApproximateNumberOfMessages", 0))
+                except Exception:
+                    pass
+
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({
+                    "status": "ONLINE",
+                    "region": DEFAULT_REGION,
+                    "dynamodb_table": dynamodb_table,
+                    "s3_data_lake": bucket_name,
+                    "state_machine_arn": state_machine_arn,
+                    "dlq_messages_visible": dlq_count,
+                }),
+            }
+
+        # Default GET response
+        return {
+            "statusCode": 200,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({
+                "service": "The Cloud Scraper API Gateway",
+                "status": "ONLINE",
+                "region": DEFAULT_REGION,
+                "supported_actions": ["status", "results", "targets", "metrics"],
+            }),
+        }
+
+    # =========================================================================
+    # Handle POST requests: Save target config or dispatch scrape job
+    # =========================================================================
+    if http_method == "POST":
+        body_obj = {}
+        if "body" in event and event.get("body"):
+            try:
+                body_obj = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
+            except Exception:
+                body_obj = {}
+
+        # Check if request is saving a target configuration
+        if body_obj.get("action") == "save_target" or body_obj.get("target_config"):
+            target_data = body_obj.get("target") or body_obj.get("target_config") or body_obj
+            success, err = dynamodb_store.save_target_config(dynamodb_table, target_data)
+            status_code = 200 if success else 400
+            return {
+                "statusCode": status_code,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({
+                    "status": "SUCCESS" if success else "FAILURE",
+                    "message": "Target configuration saved successfully" if success else f"Failed saving target: {err}",
+                    "target_id": target_data.get("site_id") or target_data.get("target_id"),
+                }),
+            }
+
+    # Dispatch scrape jobs (API Gateway POST /scrape, SQS, or EventBridge)
     jobs = parse_incoming_event(event)
 
     # If triggered by SQS, execute each message directly via Step Functions
@@ -190,6 +443,7 @@ def lambda_handler(event, context=None):
             enqueued_results.append(res)
         return {
             "statusCode": 200,
+            "headers": CORS_HEADERS,
             "status": "SUCCESS",
             "mode": "SQS_DISTRIBUTION",
             "enqueued_count": len(enqueued_results),
@@ -204,17 +458,11 @@ def lambda_handler(event, context=None):
         res = start_state_machine_execution(state_machine_arn, job)
         results.append(res)
 
-    # API Gateway response format if invoked via HTTP POST /scrape
-    is_api_request = "httpMethod" in event or ("body" in event and "path" in event)
+    is_api_request = bool(http_method)
     if is_api_request:
         return {
             "statusCode": 202,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                "Access-Control-Allow-Methods": "POST,OPTIONS",
-            },
+            "headers": CORS_HEADERS,
             "body": json.dumps({
                 "message": f"Successfully initiated scraping pipeline for {len(results)} job(s)",
                 "jobs": results,

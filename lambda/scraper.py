@@ -1,8 +1,9 @@
 """
 The Cloud Scraper - Website Scraper Lambda Function
-Extracts structured data from static websites using Requests and BeautifulSoup.
-Supports configurable extraction rules, robots.txt compliance checking,
-multi-page pagination, strict SSRF/network security validation, and archives raw HTML to Amazon S3.
+General-purpose web scraper supporting configurable extraction rules,
+generic automatic HTML extraction, robots.txt compliance checking,
+multi-page pagination, strict SSRF/redirect network security validation,
+and Amazon S3 raw HTML snapshot archival.
 """
 
 import os
@@ -22,9 +23,9 @@ from botocore.exceptions import ClientError, NoCredentialsError, NoRegionError
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "us-east-1"))
+DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "ap-southeast-2"))
 DEFAULT_USER_AGENT = (
-    "TheCloudScraper/1.0 (+https://github.com/aws-samples/the-cloud-scraper; CAD-Course-Project)"
+    "TheCloudScraper/2.0 (+https://github.com/aws-samples/the-cloud-scraper; CAD-Course-Project)"
 )
 
 # SSRF Protection: Blocked hostnames and IP ranges
@@ -35,6 +36,7 @@ BLOCKED_IP_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),    # RFC1918 Private Class B
     ipaddress.ip_network("192.168.0.0/16"),   # RFC1918 Private Class C
     ipaddress.ip_network("169.254.0.0/16"),   # Link-Local / AWS Metadata (169.254.169.254)
+    ipaddress.ip_network("100.64.0.0/10"),    # Carrier-Grade NAT
     ipaddress.ip_network("0.0.0.0/8"),        # Current network
     ipaddress.ip_network("::1/128"),          # IPv6 Loopback
     ipaddress.ip_network("fc00::/7"),         # IPv6 Unique Local Address
@@ -127,39 +129,80 @@ def check_robots_allowed(base_url: str, target_url: str, user_agent: str = DEFAU
         return True
 
 
-def load_site_config(site_id: str, config_override: dict = None) -> dict:
-    """Load configuration for a specific target website."""
-    if config_override and config_override.get("site_id") == site_id:
-        return config_override
-
-    candidate_paths = [
-        os.environ.get("SITES_CONFIG_PATH"),
-        os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
-        os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
-        os.path.join(os.getcwd(), "config", "sites_config.json"),
-    ]
-    for cp in candidate_paths:
-        if cp and os.path.exists(cp):
-            with open(cp, "r", encoding="utf-8") as f:
-                all_configs = json.load(f)
-                for site in all_configs.get("sites", []):
-                    if site.get("site_id") == site_id:
-                        return site
-
-    raise ValueError(f"Configuration for site_id '{site_id}' not found in candidate paths: {candidate_paths}")
-
-
-def fetch_page_content(url: str, timeout: int = 15, user_agent: str = DEFAULT_USER_AGENT) -> requests.Response:
-    """Fetch website HTML content with timeouts, custom User-Agent, and error handling."""
+def fetch_page_content(
+    url: str,
+    timeout: int = 15,
+    user_agent: str = DEFAULT_USER_AGENT,
+    max_redirects: int = 3,
+    max_bytes: int = 5 * 1024 * 1024,
+) -> requests.Response:
+    """
+    Fetch website HTML content with timeouts, custom User-Agent, strict SSRF redirect re-validation,
+    content-type validation, and error handling.
+    """
     headers = {
         "User-Agent": user_agent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
     }
-    logger.info("Fetching target URL: %s (timeout=%ds)", url, timeout)
-    response = requests.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-    return response
+    current_url = url
+
+    for hop in range(max_redirects + 1):
+        is_safe, sec_err = validate_target_url_security(current_url)
+        if not is_safe:
+            raise requests.exceptions.RequestException(
+                f"SSRF Security Violation on URL hop {hop}: {sec_err}"
+            )
+
+        logger.info("Fetching target URL: %s (timeout=%ds, hop=%d)", current_url, timeout, hop)
+        response = requests.get(
+            current_url,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+
+        # Handle redirects manually to validate the target of every hop
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get("Location")
+            if not location:
+                break
+            redirect_url = urljoin(current_url, location)
+            logger.info("Redirect detected: %s -> %s", current_url, redirect_url)
+            current_url = redirect_url
+            continue
+
+        response.raise_for_status()
+
+        # Validate content type if headers present
+        raw_ct = response.headers.get("Content-Type", "")
+        if isinstance(raw_ct, str) and raw_ct:
+            content_type = raw_ct.lower()
+            allowed_types = (
+                "text/html",
+                "application/xhtml+xml",
+                "text/plain",
+                "application/xml",
+                "text/xml",
+                "application/json",
+            )
+            if not any(allowed in content_type for allowed in allowed_types):
+                raise ValueError(
+                    f"Unsupported content type '{content_type}'. The Cloud Scraper only processes HTML and text web content."
+                )
+
+        # Enforce response body size limit
+        content_bytes = getattr(response, "content", b"")
+        if isinstance(content_bytes, (bytes, bytearray)) and len(content_bytes) > max_bytes:
+            raise ValueError(
+                f"Response body exceeded maximum safety size limit ({max_bytes / (1024 * 1024):.1f} MB)."
+            )
+
+        return response
+
+    raise requests.exceptions.TooManyRedirects(
+        f"Exceeded maximum permitted redirects ({max_redirects})."
+    )
 
 
 def extract_field_value(container, field_config: dict, base_url: str):
@@ -209,24 +252,260 @@ def extract_field_value(container, field_config: dict, base_url: str):
     return val
 
 
+def extract_generic_html_records(soup: BeautifulSoup, base_url: str, target_url: str) -> list:
+    """
+    Intelligently extract structured records from arbitrary HTML web pages.
+    Detects repeated container patterns (cards, rows, articles, list items) or extracts
+    the primary content sections, headings, and document metadata.
+    """
+    records = []
+
+    # 1. Page-level metadata
+    page_title = ""
+    if soup.title and soup.title.string:
+        page_title = soup.title.string.strip()
+    elif soup.select_one("meta[property='og:title']"):
+        page_title = soup.select_one("meta[property='og:title']").get("content", "").strip()
+    elif soup.find("h1"):
+        page_title = soup.find("h1").get_text(strip=True)
+
+    page_desc = ""
+    desc_tag = soup.select_one("meta[name='description']") or soup.select_one("meta[property='og:description']")
+    if desc_tag and desc_tag.get("content"):
+        page_desc = desc_tag["content"].strip()
+
+    # 2. Candidate container selectors for structured collections
+    container_candidates = [
+        "article",
+        "div[class*='card']",
+        "div[class*='item']",
+        "div[class*='product']",
+        "div[class*='post']",
+        "div[class*='entry']",
+        "div[class*='listing']",
+        "div[class*='result']",
+        "div[class*='row'] > div",
+        "li[class*='item']",
+        "tr.athing",
+        "table tbody tr",
+        "section[class*='item']",
+        "main article",
+    ]
+
+    best_containers = []
+    for cand in container_candidates:
+        matches = soup.select(cand)
+        # Check for a reasonable set of structured elements (between 2 and 150)
+        if 2 <= len(matches) <= 150:
+            has_substance = any(len(el.get_text(strip=True)) > 5 for el in matches[:5])
+            if has_substance:
+                best_containers = matches
+                logger.info("Generic extraction selected container pattern '%s' with %d items", cand, len(matches))
+                break
+
+    # If repeating containers found, extract item records
+    if best_containers:
+        for idx, el in enumerate(best_containers):
+            # Extract heading / title
+            heading_el = el.find(["h1", "h2", "h3", "h4", "h5", "a"])
+            title = heading_el.get_text(strip=True) if heading_el else ""
+            if not title:
+                title = f"{page_title or 'Record'} #{idx + 1}"
+
+            # Extract link
+            link_el = el.find("a", href=True)
+            detail_link = urljoin(base_url, link_el["href"].strip()) if link_el else target_url
+
+            # Extract body text / description
+            para_el = el.find(["p", "span", "div[class*='desc']", "div[class*='text']"])
+            text_val = para_el.get_text(strip=True) if para_el else el.get_text(strip=True)
+            if len(text_val) > 400:
+                text_val = text_val[:397] + "..."
+
+            records.append({
+                "title": title,
+                "text": text_val,
+                "detail_link": detail_link,
+                "url": detail_link,
+                "source_url": target_url,
+                "item_index": idx + 1,
+            })
+
+    # If no repeating containers found, extract document sections (headings + paragraphs)
+    if not records:
+        sections = soup.find_all(["h1", "h2", "h3"])
+        for idx, h in enumerate(sections[:20]):
+            heading_text = h.get_text(strip=True)
+            if not heading_text or len(heading_text) < 2:
+                continue
+
+            p_text = ""
+            sibling = h.find_next_sibling(["p", "div"])
+            if sibling:
+                p_text = sibling.get_text(strip=True)
+            if len(p_text) > 400:
+                p_text = p_text[:397] + "..."
+
+            link_el = h.find("a", href=True) or (sibling.find("a", href=True) if sibling else None)
+            detail_link = urljoin(base_url, link_el["href"].strip()) if link_el else target_url
+
+            records.append({
+                "title": heading_text,
+                "text": p_text or page_desc or heading_text,
+                "detail_link": detail_link,
+                "url": detail_link,
+                "source_url": target_url,
+                "item_index": idx + 1,
+            })
+
+    # Ultimate fallback: Page-level document record
+    if not records:
+        records.append({
+            "title": page_title or "Web Page Document",
+            "text": page_desc or soup.get_text(" ", strip=True)[:400] or "No text content found",
+            "detail_link": target_url,
+            "url": target_url,
+            "source_url": target_url,
+            "item_index": 1,
+        })
+
+    return records
+
+
 def parse_html_records(html_content: str, site_config: dict) -> list:
-    """Parse raw HTML content into extracted record dictionaries based on configured selectors."""
+    """Parse raw HTML content into extracted record dictionaries based on configured selectors or generic mode."""
     soup = BeautifulSoup(html_content, "html.parser")
     container_selector = site_config.get("container_selector")
     fields = site_config.get("fields", {})
     base_url = site_config.get("base_url", "")
+    target_url = site_config.get("target_url", base_url)
+    extraction_type = site_config.get("extraction_type", "custom" if container_selector else "generic")
 
-    containers = soup.select(container_selector) if container_selector else [soup]
+    # If generic extraction requested or no container selector specified, run generic extraction
+    if extraction_type == "generic" or not container_selector:
+        return extract_generic_html_records(soup, base_url, target_url)
+
+    # Custom selector extraction
+    containers = soup.select(container_selector)
     logger.info("Found %d items matching container selector '%s'", len(containers), container_selector)
+
+    # If custom container matched 0 items, gracefully fall back to generic extraction rather than empty result
+    if len(containers) == 0:
+        logger.warning(
+            "Custom container selector '%s' matched 0 items. Falling back to generic HTML extraction.",
+            container_selector,
+        )
+        return extract_generic_html_records(soup, base_url, target_url)
 
     extracted_records = []
     for container in containers:
         record = {}
         for field_name, field_cfg in fields.items():
             record[field_name] = extract_field_value(container, field_cfg, base_url)
+        if "url" not in record and "detail_link" in record:
+            record["url"] = record["detail_link"]
+        if "source_url" not in record:
+            record["source_url"] = target_url
         extracted_records.append(record)
 
     return extracted_records
+
+
+def load_site_config(site_id: str, config_override: dict = None, dynamodb_table: str = None) -> dict:
+    """
+    Load configuration for a target website.
+    Checks:
+    1. Direct config_override dictionary.
+    2. Amazon DynamoDB configuration store (table-name: the-cloud-scraper-records).
+    3. Local config/sites_config.json.
+    Raises ValueError if not found.
+    """
+    if config_override and isinstance(config_override, dict):
+        if config_override.get("site_id") == site_id or config_override.get("target_url"):
+            return config_override
+
+    # Check DynamoDB configuration store
+    table_name = dynamodb_table or os.environ.get("DYNAMODB_TABLE_NAME")
+    if table_name:
+        try:
+            ddb = boto3.resource("dynamodb", region_name=DEFAULT_REGION)
+            table = ddb.Table(table_name)
+            resp = table.get_item(Key={"site_id": f"CONFIG#{site_id}", "record_id": "TARGET_CONFIG"})
+            if "Item" in resp:
+                item = resp["Item"]
+                logger.info("Loaded target configuration for '%s' from DynamoDB", site_id)
+                fields_val = item.get("fields", {})
+                if isinstance(item.get("fields_json"), str):
+                    try:
+                        fields_val = json.loads(item["fields_json"])
+                    except Exception:
+                        pass
+                val_rules = item.get("validation_rules", {})
+                if isinstance(item.get("validation_json"), str):
+                    try:
+                        val_rules = json.loads(item["validation_json"])
+                    except Exception:
+                        pass
+                return {
+                    "site_id": item.get("target_id", site_id),
+                    "site_name": item.get("site_name", site_id),
+                    "base_url": item.get("base_url", item.get("target_url")),
+                    "target_url": item.get("target_url"),
+                    "extraction_type": item.get("extraction_type", "generic"),
+                    "container_selector": item.get("container_selector"),
+                    "next_page_selector": item.get("next_page_selector"),
+                    "fields": fields_val,
+                    "validation_rules": val_rules,
+                    "timeout_seconds": int(item.get("timeout_seconds", 15)),
+                    "page_limit": int(item.get("page_limit", 1)),
+                    "enabled": bool(item.get("enabled", True)),
+                }
+        except Exception as e:
+            logger.debug("DynamoDB target lookup skipped: %s", str(e))
+
+    # Check local configuration files
+    candidate_paths = [
+        os.environ.get("SITES_CONFIG_PATH"),
+        os.path.join(os.path.dirname(__file__), "config", "sites_config.json"),
+        os.path.join(os.path.dirname(__file__), "..", "config", "sites_config.json"),
+        os.path.join(os.getcwd(), "config", "sites_config.json"),
+    ]
+    for cp in candidate_paths:
+        if cp and os.path.exists(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    all_configs = json.load(f)
+                    for site in all_configs.get("sites", []):
+                        if site.get("site_id") == site_id:
+                            return site
+            except Exception as e:
+                logger.warning("Could not read config at %s: %s", cp, str(e))
+
+    raise ValueError(f"Configuration for site_id '{site_id}' not found in candidate paths: {candidate_paths}")
+
+
+def build_dynamic_site_config(site_id: str, event: dict) -> dict:
+    """Build a fully dynamic target configuration for an arbitrary user-submitted URL."""
+    target_url = event.get("target_url")
+    parsed_u = urlparse(target_url)
+    base_url = f"{parsed_u.scheme}://{parsed_u.netloc}/"
+    site_name = event.get("site_name") or parsed_u.netloc
+
+    return {
+        "site_id": site_id,
+        "site_name": site_name,
+        "base_url": base_url,
+        "target_url": target_url,
+        "extraction_type": event.get("extraction_type", "generic"),
+        "container_selector": event.get("container_selector"),
+        "next_page_selector": event.get("next_page_selector"),
+        "fields": event.get("fields", {}),
+        "validation_rules": event.get("validation_rules", {}),
+        "timeout_seconds": int(event.get("timeout_seconds", 15)),
+        "page_limit": int(event.get("page_limit", 1)),
+        "rate_limit_delay_seconds": 1.0,
+        "enabled": True,
+    }
 
 
 def save_raw_snapshot_to_s3(
@@ -272,7 +551,8 @@ def save_raw_snapshot_to_s3(
 def lambda_handler(event, context=None):
     """
     Lambda Handler for Website Scraping.
-    Receives site_id, optional target_url override, page_limit, timeout_seconds, or mock_html.
+    Receives site_id, optional target_url override, custom extraction config,
+    page_limit, timeout_seconds, or mock_html.
     Scrapes the target(s), enforces robots.txt and SSRF security, stores raw HTML to S3, and returns records.
     """
     logger.info("Received scraper event: %s", json.dumps(event))
@@ -280,16 +560,23 @@ def lambda_handler(event, context=None):
     site_id = event.get("site_id", "books_toscrape")
     config_override = event.get("config_override")
     bucket_name = event.get("bucket_name") or os.environ.get("RAW_S3_BUCKET", "")
+    dynamodb_table = event.get("dynamodb_table") or os.environ.get("DYNAMODB_TABLE_NAME")
 
+    # Load configuration from override, DynamoDB, or config files
     try:
-        site_config = load_site_config(site_id, config_override)
-    except Exception as e:
-        return {
-            "statusCode": 400,
-            "status": "FAILURE",
-            "site_id": site_id,
-            "error": f"Configuration error: {str(e)}",
-        }
+        site_config = load_site_config(site_id, config_override, dynamodb_table=dynamodb_table)
+    except ValueError as ve:
+        # If site_id is unknown but target_url is provided, build dynamic configuration on the fly!
+        if event.get("target_url"):
+            site_config = build_dynamic_site_config(site_id, event)
+            logger.info("Created dynamic site configuration for custom URL: %s", event.get("target_url"))
+        else:
+            return {
+                "statusCode": 400,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "error": f"Configuration error: {str(ve)}",
+            }
 
     target_url = event.get("target_url") or site_config.get("target_url")
     base_url = site_config.get("base_url", target_url)
@@ -303,7 +590,7 @@ def lambda_handler(event, context=None):
 
     # Validate page limit with safe bounds (1 to 5 pages)
     try:
-        requested_pages = int(event.get("page_limit", 1))
+        requested_pages = int(event.get("page_limit", site_config.get("page_limit", 1)))
         page_limit = min(max(requested_pages, 1), 5)
     except (ValueError, TypeError):
         page_limit = 1
@@ -359,7 +646,7 @@ def lambda_handler(event, context=None):
                 "is_retryable": False,
             }
 
-        # 3. Fetch initial page
+        # 3. Fetch initial page with redirect SSRF validation
         try:
             response = fetch_page_content(target_url, timeout=timeout)
             html_content = response.text
@@ -374,6 +661,17 @@ def lambda_handler(event, context=None):
                 "scraped_at": timestamp,
                 "error": f"HTTP request failed: {str(e)}",
                 "is_retryable": True,
+            }
+        except Exception as e:
+            logger.error("Content processing error for URL %s: %s", target_url, str(e))
+            return {
+                "statusCode": 400,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "scraped_at": timestamp,
+                "error": str(e),
+                "is_retryable": False,
             }
 
         records = parse_html_records(html_content, site_config)
@@ -454,6 +752,8 @@ def lambda_handler(event, context=None):
         "records_count": len(records),
         "pages_scraped": pages_scraped,
         "records": records,
+        "config_override": site_config,
+        "extraction_type": site_config.get("extraction_type", "generic"),
     }
 
 

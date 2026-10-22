@@ -1,6 +1,6 @@
 """
 The Cloud Scraper - Data Transformation and Cleaning Lambda Function
-Cleans raw scraped records, normalizes fields (prices, ratings, URLs),
+Cleans raw scraped records, normalizes fields (prices, ratings, URLs, text),
 performs deterministic deduplication via SHA-256 hashing, and structures
 standardized JSON records for storage.
 """
@@ -71,18 +71,21 @@ def generate_content_hash(record: Dict[str, Any], site_id: str) -> str:
     Generate a deterministic SHA-256 fingerprint hash of record identifying fields.
     Prevents duplicate storage across scraping runs.
     """
-    # Deterministic keys based on site or primary identifier
     id_parts = [site_id]
     if "detail_link" in record and record["detail_link"]:
         id_parts.append(str(record["detail_link"]).strip().lower())
+    elif "url" in record and record["url"]:
+        id_parts.append(str(record["url"]).strip().lower())
     elif "quote" in record and record["quote"]:
         id_parts.append(str(record["quote"]).strip().lower())
         id_parts.append(str(record.get("author", "")).strip().lower())
     elif "title" in record and record["title"]:
         id_parts.append(str(record["title"]).strip().lower())
+        if "text" in record and record["text"]:
+            id_parts.append(str(record["text"])[:60].strip().lower())
     else:
         # Fallback to sorted key-value string
-        sorted_items = sorted((k, str(v)) for k, v in record.items() if v is not None)
+        sorted_items = sorted((k, str(v)) for k, v in record.items() if v is not None and k not in ("scraped_at", "transformed_at"))
         id_parts.extend([f"{k}:{v}" for k, v in sorted_items])
 
     composite_key = "|".join(id_parts)
@@ -114,7 +117,7 @@ def clean_and_normalize_record(
     transformed["record_id"] = record_id
     transformed["content_hash"] = content_hash
     transformed["site_id"] = site_id
-    transformed["source_url"] = source_url
+    transformed["source_url"] = source_url or transformed.get("url") or transformed.get("detail_link", "")
     transformed["scraped_at"] = scraped_at or now_iso
     transformed["transformed_at"] = now_iso
 
@@ -146,7 +149,7 @@ def deduplicate_records(
 def lambda_handler(event, context=None):
     """
     Lambda Handler for Data Transformation and Deduplication.
-    Receives raw records output from scraper Lambda.
+    Receives raw records output from scraper / validation Lambda.
     """
     logger.info("Transformation handler received event with status: %s", event.get("status"))
 
@@ -154,6 +157,7 @@ def lambda_handler(event, context=None):
     site_id = event.get("site_id", "unknown_site")
     source_url = event.get("target_url", "")
     scraped_at = event.get("scraped_at", "")
+    config_override = event.get("config_override")
 
     if not raw_records:
         return {
@@ -165,6 +169,7 @@ def lambda_handler(event, context=None):
             "duplicates_removed": 0,
             "records": [],
             "message": "No records to transform",
+            "config_override": config_override,
         }
 
     # Transform and clean each record
@@ -194,6 +199,8 @@ def lambda_handler(event, context=None):
         "total_transformed": len(unique_records),
         "duplicates_removed": len(duplicate_records),
         "records": unique_records,
+        "config_override": config_override,
+        "extraction_type": event.get("extraction_type", "generic"),
     }
 
 

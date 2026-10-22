@@ -1,9 +1,12 @@
 # The Cloud Scraper — Serverless Automated Data Pipeline
 
-> **Course:** Cloud Architecture Design (CAD)  
+> **Course:** Cloud Architecture Design (CAD) — BCSE355L  
 > **Project Name:** The Cloud Scraper — Serverless Automated Data Pipeline  
 > **Derived From:** AWS Step Functions ETL Pipeline Pattern  
-> **Status:** Working Model & Automated Test Suite Passing (32/32 tests passed)
+> **Status:** Live AWS Deployment Verified • Public CloudFront Dashboard Live • 49/49 Automated Tests Passing  
+> **Public Web Dashboard:** [https://d3k1ttzl3bzy2k.cloudfront.net](https://d3k1ttzl3bzy2k.cloudfront.net)  
+> **API Gateway Endpoint:** `https://xehoja83gg.execute-api.ap-southeast-2.amazonaws.com/prod/scrape`  
+> **AWS Region:** `ap-southeast-2` (Sydney)  
 
 ---
 
@@ -161,6 +164,31 @@ Target websites and their extraction rules are configured declaratively in [`con
 - **Category:** Tech News & Aggregator (Robots.txt permitted for frontpage index)
 - **Container Selector:** `tr.athing`
 - **Extracted Fields:** `rank` (integer rank), `title`, `detail_link`.
+
+---
+
+## 5B. General-Purpose Web Scraping & Dynamic Target Registration
+
+The Cloud Scraper is **not restricted** to a hard-coded list of domains. Users can enter arbitrary eligible public website URLs and extract data on demand via the dashboard or REST API:
+
+1. **Automatic Generic Extraction Mode (`extraction_mode: "generic"`):**
+   - Heuristically detects repeating cards, table rows, article containers, headings, links, and content paragraphs.
+   - Requires zero CSS selector authoring.
+   - Ideal for news blogs, documentation pages, press releases, and listings.
+
+2. **Configurable CSS Selector Mode (`extraction_mode: "custom"`):**
+   - Allows users to specify precise DOM element selectors for container, title, links, and custom metadata fields.
+   - Dynamically mapped into Lambda extraction rules without rebuilding backend functions.
+
+3. **Dynamic Target Registration in DynamoDB (`action: "save_target"`):**
+   - Custom targets can be saved to DynamoDB with partition key `site_id` and sort key `TARGET_CONFIG`.
+   - Saved targets appear automatically in the target selector and can be re-run on demand or on recurring schedules.
+
+4. **Multi-Layer SSRF & Safety Protection:**
+   - Pre-flight DNS resolution and IP validation.
+   - Strictly blocks localhost (`127.0.0.1`, `::1`), RFC 1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`), and AWS IMDS metadata endpoints (`169.254.169.254`).
+   - Automatically re-validates redirect URLs to prevent SSRF redirect bypasses.
+   - Content-type filtering enforces `text/html` and limits maximum response payload to 5MB.
 
 ---
 

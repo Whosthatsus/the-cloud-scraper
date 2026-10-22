@@ -120,6 +120,12 @@ def run_pipeline(
     custom_url: str = None,
     page_limit: int = 1,
     timeout_seconds: int = 15,
+    extraction_type: str = "generic",
+    container_selector: str = None,
+    fields: dict = None,
+    validation_rules: dict = None,
+    site_name: str = None,
+    config_override: dict = None,
 ) -> dict:
     """
     Execute the entire serverless pipeline for a given site_id in sequence,
@@ -139,10 +145,17 @@ def run_pipeline(
     print("\n[State 1/5] Executing Scraper Lambda...")
     scrape_event = {
         "site_id": site_id,
+        "site_name": site_name or site_id,
         "bucket_name": bucket_name,
         "page_limit": page_limit,
         "timeout_seconds": timeout_seconds,
+        "extraction_type": extraction_type,
+        "container_selector": container_selector,
+        "fields": fields or {},
+        "validation_rules": validation_rules or {},
     }
+    if config_override:
+        scrape_event["config_override"] = config_override
     if custom_url:
         scrape_event["target_url"] = custom_url
         print(f"  [INFO] Custom target URL: {custom_url}")

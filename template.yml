@@ -173,6 +173,7 @@ Resources:
                   - dynamodb:PutItem
                   - dynamodb:GetItem
                   - dynamodb:Query
+                  - dynamodb:Scan
                 Resource:
                   - !GetAtt DynamoDBTable.Arn
                   - !Sub "${DynamoDBTable.Arn}/index/*"
@@ -207,7 +208,11 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-pipeline-sm"
+                  - states:DescribeExecution
+                  - states:ListExecutions
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${AWS::StackName}-pipeline-sm"
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:${AWS::StackName}-pipeline-sm:*"
 
   StepFunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -351,12 +356,19 @@ Resources:
           DYNAMODB_TABLE_NAME: !Ref DynamoDBTable
           SITES_CONFIG_PATH: config/sites_config.json
           SQS_QUEUE_URL: !Ref ScraperJobQueue
+          SQS_DLQ_URL: !Ref ScraperDLQ
       Events:
-        OnDemandApiTrigger:
+        OnDemandApiPostTrigger:
           Type: Api
           Properties:
             Path: /scrape
             Method: post
+            RestApiId: !Ref ApiGatewayRestApi
+        OnDemandApiGetTrigger:
+          Type: Api
+          Properties:
+            Path: /scrape
+            Method: get
             RestApiId: !Ref ApiGatewayRestApi
         QueueJobTrigger:
           Type: SQS
