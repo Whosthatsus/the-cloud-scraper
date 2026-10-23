@@ -19,6 +19,7 @@ import boto3
 from botocore.exceptions import ClientError, NoCredentialsError, NoRegionError
 
 import dynamodb_store
+import scraper
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -268,6 +269,44 @@ def describe_sfn_execution(execution_arn: str) -> dict:
             except Exception:
                 output_data = desc["output"]
 
+        err_cause = desc.get("cause")
+        err_name = desc.get("error")
+
+        # If execution failed, retrieve specific cause from execution history events
+        if desc.get("status") == "FAILED":
+            try:
+                hist = sfn_client.get_execution_history(
+                    executionArn=execution_arn,
+                    reverseOrder=True,
+                    maxResults=10,
+                )
+                for ev in hist.get("events", []):
+                    ev_type = ev.get("type")
+                    if ev_type in ("ExecutionFailed", "LambdaFunctionFailed", "TaskFailed"):
+                        det = (
+                            ev.get("executionFailedEventDetails")
+                            or ev.get("lambdaFunctionFailedEventDetails")
+                            or ev.get("taskFailedEventDetails")
+                            or {}
+                        )
+                        if det.get("cause"):
+                            raw_cause = det["cause"]
+                            try:
+                                parsed = json.loads(raw_cause)
+                                if isinstance(parsed, dict) and parsed.get("errorMessage"):
+                                    err_cause = parsed["errorMessage"]
+                                elif isinstance(parsed, dict) and parsed.get("error"):
+                                    err_cause = parsed["error"]
+                                else:
+                                    err_cause = raw_cause
+                            except Exception:
+                                err_cause = raw_cause
+                        if det.get("error"):
+                            err_name = det["error"]
+                        break
+            except Exception as hist_err:
+                logger.debug("Could not inspect execution history for failure details: %s", str(hist_err))
+
         return {
             "executionArn": desc.get("executionArn"),
             "executionName": desc.get("name"),
@@ -275,8 +314,8 @@ def describe_sfn_execution(execution_arn: str) -> dict:
             "startDate": str(desc.get("startDate")),
             "stopDate": str(desc.get("stopDate")),
             "output": output_data,
-            "error": desc.get("error"),
-            "cause": desc.get("cause"),
+            "error": err_name,
+            "cause": err_cause,
         }
     except Exception as e:
         logger.error("Failed describing Step Functions execution %s: %s", execution_arn, str(e))
@@ -389,6 +428,17 @@ def lambda_handler(event, context=None):
                 }),
             }
 
+        # 5. Preflight compatibility check
+        if action == "preflight":
+            target_url = query_params.get("url") or query_params.get("target_url") or ""
+            timeout = int(query_params.get("timeout", 8))
+            preflight_result = scraper.run_preflight_check(target_url, timeout=timeout)
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps(preflight_result),
+            }
+
         # Default GET response
         return {
             "statusCode": 200,
@@ -397,7 +447,7 @@ def lambda_handler(event, context=None):
                 "service": "The Cloud Scraper API Gateway",
                 "status": "ONLINE",
                 "region": DEFAULT_REGION,
-                "supported_actions": ["status", "results", "targets", "metrics"],
+                "supported_actions": ["status", "results", "targets", "metrics", "preflight"],
             }),
         }
 
@@ -411,6 +461,17 @@ def lambda_handler(event, context=None):
                 body_obj = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
             except Exception:
                 body_obj = {}
+
+        # Check if request is a preflight check
+        if body_obj.get("action") == "preflight":
+            target_url = body_obj.get("target_url") or body_obj.get("url") or ""
+            timeout = int(body_obj.get("timeout_seconds", 8))
+            preflight_result = scraper.run_preflight_check(target_url, timeout=timeout)
+            return {
+                "statusCode": 200,
+                "headers": CORS_HEADERS,
+                "body": json.dumps(preflight_result),
+            }
 
         # Check if request is saving a target configuration
         if body_obj.get("action") == "save_target" or body_obj.get("target_config"):

@@ -1,0 +1,15 @@
+[
+  {
+    "title": "Herman Melville - Moby-Dick",
+    "text": "Availing himself of the mild, summer-cool weather that now reigned in these latitudes, and in preparation for the peculiarly active pursuits shortly to be anticipated, Perth, the begrimed, blistered old blacksmith, had not removed his portable forge to the hold again, after concluding his contributory work for Ahab's leg, but still retained it on deck, fast lashed to ringbolts by the foremast; ...",
+    "detail_link": "https://httpbin.org/html",
+    "url": "https://httpbin.org/html",
+    "source_url": "https://httpbin.org/html",
+    "item_index": 1,
+    "record_id": "httpbin_org#e7154797b2705f67",
+    "content_hash": "e7154797b2705f67654f5d68ae3a5b69cac49978d71733b661a6ca6553d8724d",
+    "site_id": "httpbin_org",
+    "scraped_at": "2026-10-23T20:27:18.666079+00:00",
+    "transformed_at": "2026-10-23T20:27:21.976648+00:00"
+  }
+]

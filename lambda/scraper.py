@@ -9,6 +9,7 @@ and Amazon S3 raw HTML snapshot archival.
 import os
 import json
 import time
+import re
 import socket
 import ipaddress
 import logging
@@ -25,7 +26,8 @@ logger.setLevel(logging.INFO)
 
 DEFAULT_REGION = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("AWS_REGION", "ap-southeast-2"))
 DEFAULT_USER_AGENT = (
-    "TheCloudScraper/2.0 (+https://github.com/aws-samples/the-cloud-scraper; CAD-Course-Project)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36 (Compatible; TheCloudScraper/2.0; +https://github.com/aws-samples/the-cloud-scraper)"
 )
 
 # SSRF Protection: Blocked hostnames and IP ranges
@@ -127,6 +129,246 @@ def check_robots_allowed(base_url: str, target_url: str, user_agent: str = DEFAU
     except Exception as e:
         logger.debug("Robots.txt check skipped or timed out (%s): defaulting to allow", str(e))
         return True
+
+def detect_page_incompatibility(html_content: str, status_code: int = 200) -> tuple:
+    """
+    Detect whether page cannot be scraped via static HTTP ingestion because it is:
+    1. An active bot challenge / interstitial page (Akamai, Cloudflare, PerimeterX, etc.)
+    2. An empty Single Page Application (SPA) skeleton requiring client-side JavaScript execution.
+    Returns (is_incompatible: bool, diagnostic_reason: str).
+    """
+    if not html_content or len(html_content.strip()) == 0:
+        return True, "Target returned an empty response body."
+
+    lower = html_content.lower()
+
+    # 1. Anti-bot interstitial challenge signatures
+    challenge_signatures = [
+        ("bm-verify=", "Akamai Bot Manager Challenge / Verification Interstitial"),
+        ("_sec/verify?provider=", "Akamai Interstitial Security Challenge"),
+        ("cf-chl-bypass", "Cloudflare Turnstile / Managed Challenge"),
+        ("challenge-platform", "Cloudflare Anti-Bot Challenge Platform"),
+        ("perimeterx", "HUMAN Security / PerimeterX Bot Defense Challenge"),
+        ("datadome", "DataDome Anti-Bot Challenge"),
+        ("enable javascript and cookies to continue", "Target requires active browser JavaScript and Cookie solving"),
+        ("interstitial challenge", "Target displayed an interstitial verification screen"),
+    ]
+    for pattern, name in challenge_signatures:
+        if pattern in lower:
+            return (
+                True,
+                f"Interactive Anti-Bot Challenge Detected ({name}): Target website requires full browser "
+                f"execution and challenge solving not supported in serverless HTTP pipeline.",
+            )
+
+    # 2. Client-side Single Page Application (SPA) empty skeleton signatures
+    try:
+        soup = BeautifulSoup(html_content, "html.parser")
+        for s in soup(["script", "style", "noscript"]):
+            s.extract()
+        visible_text = soup.get_text(" ", strip=True)
+
+        spa_markers = ['id="root"', 'id="app"', 'id="__next"']
+        has_spa_mount = any(m in html_content for m in spa_markers)
+
+        if has_spa_mount and len(visible_text) < 120:
+            return (
+                True,
+                "JavaScript Rendering Required: Target is a Client-Side Single Page Application (SPA). "
+                "Content is rendered dynamically in the browser via JavaScript and cannot be extracted from static server response.",
+            )
+
+        if len(visible_text) < 20 and len(html_content) > 500 and ("<script" in lower or "<noscript" in lower):
+            return (
+                True,
+                "JavaScript Rendering Required: Static HTML response contains no readable textual content; page requires browser hydration.",
+            )
+    except Exception:
+        pass
+
+    return False, ""
+
+
+def run_preflight_check(url: str, timeout: int = 8) -> dict:
+    """
+    Perform a bounded preflight assessment of a website URL before triggering a full scrape pipeline.
+    Validates URL syntax, SSRF safety, reachability, HTTP status, robots.txt, and JavaScript rendering need.
+    """
+    if not url or not isinstance(url, str):
+        return {
+            "is_compatible": False,
+            "status": "INVALID_URL",
+            "url": url or "",
+            "summary": "Target URL must be a non-empty string.",
+            "warnings": ["Empty or invalid URL parameter"],
+        }
+
+    url = url.strip()
+    is_safe, sec_err = validate_target_url_security(url)
+    if not is_safe:
+        return {
+            "is_compatible": False,
+            "status": "REJECTED_SSRF",
+            "url": url,
+            "summary": f"Security validation rejected target URL: {sec_err}",
+            "warnings": ["Blocked by SSRF & Private Network Security Filter"],
+        }
+
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}/"
+    robots_ok = check_robots_allowed(base_url, url)
+
+    warnings = []
+    if not robots_ok:
+        warnings.append("Target path is disallowed by target website robots.txt policy.")
+
+    # Execute bounded preflight GET request
+    try:
+        resp = requests.get(
+            url,
+            headers={
+                "User-Agent": DEFAULT_USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            },
+            timeout=timeout,
+            allow_redirects=True,
+        )
+    except requests.exceptions.Timeout:
+        return {
+            "is_compatible": False,
+            "status": "TIMEOUT",
+            "url": url,
+            "summary": f"Connection timed out after {timeout} seconds. Target host did not respond in time.",
+            "warnings": warnings + ["Target host connection timed out"],
+        }
+    except requests.exceptions.SSLError as ssl_err:
+        return {
+            "is_compatible": False,
+            "status": "SSL_ERROR",
+            "url": url,
+            "summary": f"SSL / TLS handshake failure: {str(ssl_err)}",
+            "warnings": warnings + ["SSL certificate or protocol verification failed"],
+        }
+    except requests.exceptions.ConnectionError as conn_err:
+        return {
+            "is_compatible": False,
+            "status": "CONNECTION_FAILED",
+            "url": url,
+            "summary": f"Target host connection failed or domain could not be resolved: {str(conn_err)}",
+            "warnings": warnings + ["DNS or network connection error"],
+        }
+    except Exception as e:
+        return {
+            "is_compatible": False,
+            "status": "REQUEST_ERROR",
+            "url": url,
+            "summary": f"HTTP request failed: {str(e)}",
+            "warnings": warnings + [str(e)],
+        }
+
+    status_code = resp.status_code
+    content_type = resp.headers.get("Content-Type", "")
+
+    # Check status code
+    if status_code in (401, 403):
+        return {
+            "is_compatible": False,
+            "status": "ACCESS_DENIED",
+            "url": url,
+            "status_code": status_code,
+            "content_type": content_type,
+            "robots_allowed": robots_ok,
+            "summary": f"Access Denied (HTTP {status_code}): Target host refused access. The page may require authentication or has active bot protection.",
+            "warnings": warnings + [f"HTTP {status_code} Forbidden/Unauthorized response"],
+        }
+
+    if status_code == 404:
+        return {
+            "is_compatible": False,
+            "status": "NOT_FOUND",
+            "url": url,
+            "status_code": 404,
+            "content_type": content_type,
+            "robots_allowed": robots_ok,
+            "summary": "Target resource was not found (HTTP 404 Not Found).",
+            "warnings": warnings + ["HTTP 404 Not Found"],
+        }
+
+    if status_code >= 400:
+        return {
+            "is_compatible": False,
+            "status": f"HTTP_{status_code}",
+            "url": url,
+            "status_code": status_code,
+            "content_type": content_type,
+            "robots_allowed": robots_ok,
+            "summary": f"Target host returned HTTP error status {status_code}.",
+            "warnings": warnings + [f"HTTP {status_code}"],
+        }
+
+    # Check for content-type
+    if "html" not in content_type.lower() and "text" not in content_type.lower():
+        return {
+            "is_compatible": False,
+            "status": "UNSUPPORTED_MEDIA",
+            "url": url,
+            "status_code": status_code,
+            "content_type": content_type,
+            "robots_allowed": robots_ok,
+            "summary": f"Unsupported media type '{content_type}'. The Cloud Scraper extracts data from HTML web pages.",
+            "warnings": warnings + [f"Non-HTML Content-Type: {content_type}"],
+        }
+
+    # Check for anti-bot or SPA
+    is_incompatible, diag_reason = detect_page_incompatibility(resp.text, status_code)
+    if is_incompatible:
+        return {
+            "is_compatible": False,
+            "status": "INCOMPATIBLE_STRUCTURE",
+            "url": url,
+            "status_code": status_code,
+            "content_type": content_type,
+            "robots_allowed": robots_ok,
+            "requires_javascript": True,
+            "summary": diag_reason,
+            "warnings": warnings + [diag_reason],
+        }
+
+    # Check for usable content
+    try:
+        soup = BeautifulSoup(resp.text, "html.parser")
+        page_title = soup.title.string.strip() if soup.title and soup.title.string else parsed.netloc
+
+        soup_clean = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup_clean(["script", "style", "nav", "header", "footer", "aside"]):
+            tag.decompose()
+
+        headings_count = len(soup_clean.find_all(["h1", "h2", "h3"]))
+        articles_count = len(soup_clean.select("article, div[class*='item'], div[class*='card'], tr, li"))
+    except Exception:
+        page_title = parsed.netloc
+        headings_count = 0
+        articles_count = 0
+
+    recommended_mode = "generic"
+
+    return {
+        "is_compatible": True,
+        "status": "COMPATIBLE",
+        "url": url,
+        "final_url": resp.url,
+        "status_code": status_code,
+        "content_type": content_type,
+        "page_title": page_title,
+        "robots_allowed": robots_ok,
+        "requires_javascript": False,
+        "recommended_mode": recommended_mode,
+        "content_length_bytes": len(resp.content),
+        "headings_found": headings_count,
+        "summary": f"Preflight passed: Target is accessible (HTTP 200), returned valid HTML ({len(resp.content):,} bytes), and is compatible with generic extraction.",
+        "warnings": warnings,
+    }
 
 
 def fetch_page_content(
@@ -255,8 +497,8 @@ def extract_field_value(container, field_config: dict, base_url: str):
 def extract_generic_html_records(soup: BeautifulSoup, base_url: str, target_url: str) -> list:
     """
     Intelligently extract structured records from arbitrary HTML web pages.
-    Detects repeated container patterns (cards, rows, articles, list items) or extracts
-    the primary content sections, headings, and document metadata.
+    Excludes navigation chrome, detects repeated container patterns (cards, rows, articles),
+    or extracts the primary document sections, headings, and semantic text.
     """
     records = []
 
@@ -274,34 +516,45 @@ def extract_generic_html_records(soup: BeautifulSoup, base_url: str, target_url:
     if desc_tag and desc_tag.get("content"):
         page_desc = desc_tag["content"].strip()
 
-    # 2. Candidate container selectors for structured collections
+    # Create a cleaned copy of soup without navigation, headers, footers, scripts, and styling
+    try:
+        soup_clean = BeautifulSoup(str(soup), "html.parser")
+        for el in soup_clean(["script", "style", "nav", "header", "footer", "aside", "noscript", "svg"]):
+            el.decompose()
+
+        for el in soup_clean.select(".nav, .navbar, .menu, .sidebar, #sidebar, .header, .footer, .breadcrumbs, .pagination, .mw-navigation"):
+            el.decompose()
+    except Exception:
+        soup_clean = soup
+
+    # 2. Candidate container selectors for structured collections (scoped to main content if available)
+    main_scope = soup_clean.find(["main", "article"]) or soup_clean.find(id=re.compile(r"content|main", re.I)) or soup_clean
+
     container_candidates = [
         "article",
-        "div[class*='card']",
-        "div[class*='item']",
         "div[class*='product']",
-        "div[class*='post']",
-        "div[class*='entry']",
+        "div[class*='card']",
         "div[class*='listing']",
+        "div[class*='entry']",
+        "div[class*='post']",
         "div[class*='result']",
-        "div[class*='row'] > div",
-        "li[class*='item']",
         "tr.athing",
         "table tbody tr",
         "section[class*='item']",
-        "main article",
+        "div[class*='row'] > div",
+        "div[class*='item']",
+        "li[class*='item']",
     ]
 
     best_containers = []
     for cand in container_candidates:
-        matches = soup.select(cand)
-        # Check for a reasonable set of structured elements (between 2 and 150)
-        if 2 <= len(matches) <= 150:
-            has_substance = any(len(el.get_text(strip=True)) > 5 for el in matches[:5])
-            if has_substance:
-                best_containers = matches
-                logger.info("Generic extraction selected container pattern '%s' with %d items", cand, len(matches))
-                break
+        matches = main_scope.select(cand)
+        # Filter matches that have at least 15 characters of substantive text
+        substantive = [el for el in matches if len(el.get_text(strip=True)) >= 15]
+        if 2 <= len(substantive) <= 150:
+            best_containers = substantive
+            logger.info("Generic extraction selected container pattern '%s' with %d items", cand, len(substantive))
+            break
 
     # If repeating containers found, extract item records
     if best_containers:
@@ -322,21 +575,27 @@ def extract_generic_html_records(soup: BeautifulSoup, base_url: str, target_url:
             if len(text_val) > 400:
                 text_val = text_val[:397] + "..."
 
-            records.append({
+            rec = {
                 "title": title,
                 "text": text_val,
                 "detail_link": detail_link,
                 "url": detail_link,
                 "source_url": target_url,
                 "item_index": idx + 1,
-            })
+            }
+
+            price_match = re.search(r"([£$€₹¥]\s*[\d,]+\.?\d*)", el.get_text(" ", strip=True))
+            if price_match:
+                rec["price_raw"] = price_match.group(1)
+
+            records.append(rec)
 
     # If no repeating containers found, extract document sections (headings + paragraphs)
     if not records:
-        sections = soup.find_all(["h1", "h2", "h3"])
-        for idx, h in enumerate(sections[:20]):
+        sections = main_scope.find_all(["h1", "h2", "h3"])
+        for idx, h in enumerate(sections[:25]):
             heading_text = h.get_text(strip=True)
-            if not heading_text or len(heading_text) < 2:
+            if not heading_text or len(heading_text) < 3:
                 continue
 
             p_text = ""
@@ -360,9 +619,10 @@ def extract_generic_html_records(soup: BeautifulSoup, base_url: str, target_url:
 
     # Ultimate fallback: Page-level document record
     if not records:
+        body_text = main_scope.get_text(" ", strip=True)[:400] or page_desc or "No text content found"
         records.append({
             "title": page_title or "Web Page Document",
-            "text": page_desc or soup.get_text(" ", strip=True)[:400] or "No text content found",
+            "text": body_text,
             "detail_link": target_url,
             "url": target_url,
             "source_url": target_url,
@@ -557,6 +817,12 @@ def lambda_handler(event, context=None):
     """
     logger.info("Received scraper event: %s", json.dumps(event))
 
+    # Support preflight check action directly through scraper handler
+    if event.get("action") == "preflight" or event.get("preflight"):
+        preflight_url = event.get("target_url") or event.get("url") or ""
+        preflight_timeout = int(event.get("timeout_seconds", 8))
+        return run_preflight_check(preflight_url, timeout=preflight_timeout)
+
     site_id = event.get("site_id", "books_toscrape")
     config_override = event.get("config_override")
     bucket_name = event.get("bucket_name") or os.environ.get("RAW_S3_BUCKET", "")
@@ -651,16 +917,70 @@ def lambda_handler(event, context=None):
             response = fetch_page_content(target_url, timeout=timeout)
             html_content = response.text
             http_status = response.status_code
+        except requests.exceptions.HTTPError as he:
+            resp_status = he.response.status_code if getattr(he, "response", None) is not None else 500
+            if resp_status in (401, 403):
+                err_msg = (
+                    f"HTTP {resp_status} Forbidden: Target server refused access (authentication required or anti-bot protection active). "
+                    f"The website cannot be scraped via automated HTTP ingestion."
+                )
+                err_code = 403
+                is_retryable = False
+                err_type = "ACCESS_DENIED"
+            elif resp_status == 404:
+                err_msg = f"HTTP 404 Not Found: The requested URL was not found on remote server."
+                err_code = 404
+                is_retryable = False
+                err_type = "NOT_FOUND"
+            elif resp_status == 429:
+                err_msg = f"HTTP 429 Too Many Requests: Rate limit exceeded on target host. Try again later."
+                err_code = 429
+                is_retryable = True
+                err_type = "RATE_LIMITED"
+            else:
+                err_msg = f"HTTP {resp_status} Server Error: {str(he)}"
+                err_code = 502
+                is_retryable = True
+                err_type = "SERVER_ERROR"
+
+            logger.error("HTTP error for URL %s: %s", target_url, err_msg)
+            return {
+                "statusCode": err_code,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "scraped_at": timestamp,
+                "error": err_msg,
+                "error_type": err_type,
+                "is_retryable": is_retryable,
+            }
+        except requests.exceptions.Timeout as te:
+            logger.error("Timeout fetching URL %s: %s", target_url, str(te))
+            return {
+                "statusCode": 504,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "scraped_at": timestamp,
+                "error": f"Connection timed out after {timeout} seconds: Target host did not respond in time.",
+                "error_type": "TIMEOUT",
+                "is_retryable": True,
+            }
         except requests.exceptions.RequestException as e:
             logger.error("Scraping request failed for URL %s: %s", target_url, str(e))
+            resp_code = e.response.status_code if getattr(e, "response", None) is not None else 502
+            is_forbidden = resp_code in (401, 403) or "403" in str(e) or "401" in str(e)
+            is_not_found = resp_code in (404, 410) or "404" in str(e)
+            is_retryable = not is_forbidden and not is_not_found
             return {
-                "statusCode": 502,
+                "statusCode": 403 if is_forbidden else (404 if is_not_found else 502),
                 "status": "FAILURE",
                 "site_id": site_id,
                 "target_url": target_url,
                 "scraped_at": timestamp,
                 "error": f"HTTP request failed: {str(e)}",
-                "is_retryable": True,
+                "error_type": "ACCESS_DENIED" if is_forbidden else "REQUEST_EXCEPTION",
+                "is_retryable": is_retryable,
             }
         except Exception as e:
             logger.error("Content processing error for URL %s: %s", target_url, str(e))
@@ -671,6 +991,22 @@ def lambda_handler(event, context=None):
                 "target_url": target_url,
                 "scraped_at": timestamp,
                 "error": str(e),
+                "error_type": "UNHANDLED_EXCEPTION",
+                "is_retryable": False,
+            }
+
+        # Check for active anti-bot challenge or client-side SPA rendering requirement
+        is_incompatible, diag_reason = detect_page_incompatibility(html_content, http_status)
+        if is_incompatible:
+            logger.warning("Incompatible page structure detected for %s: %s", target_url, diag_reason)
+            return {
+                "statusCode": 422,
+                "status": "FAILURE",
+                "site_id": site_id,
+                "target_url": target_url,
+                "scraped_at": timestamp,
+                "error": diag_reason,
+                "error_type": "JS_RENDER_OR_CHALLENGE_REQUIRED",
                 "is_retryable": False,
             }
 

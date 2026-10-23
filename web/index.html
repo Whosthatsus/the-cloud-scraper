@@ -7,730 +7,762 @@
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet">
 </head>
-<body class="dashboard-body">
+<body>
 
-  <div class="app-layout">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <div class="logo-icon">⚡</div>
-        <div class="brand-text">
-          <h1 class="brand-title">The Cloud Scraper</h1>
-          <span class="brand-badge">Serverless ETL &bull; CAD</span>
-        </div>
+  <!-- Top Sticky Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand-wrap">
+        <a href="#landing" class="wordmark" id="brandLogo">The Cloud Scraper</a>
+        <span class="brand-tag">CAD &bull; BCSE355L</span>
       </div>
 
-      <nav class="sidebar-nav">
-        <a href="#overview" class="nav-item active" data-tab="overview">
-          <span class="nav-icon">📊</span>
-          <span class="nav-label">Overview</span>
-        </a>
-        <a href="#workspace" class="nav-item" data-tab="workspace">
-          <span class="nav-icon">🕷️</span>
-          <span class="nav-label">Scrape Workspace</span>
-        </a>
-        <a href="#results" class="nav-item" data-tab="results">
-          <span class="nav-icon">📋</span>
-          <span class="nav-label">Results & Data</span>
-          <span class="nav-counter" id="sidebarRecordsCount">0</span>
-        </a>
-        <a href="#history" class="nav-item" data-tab="history">
-          <span class="nav-icon">📜</span>
-          <span class="nav-label">Execution History</span>
-        </a>
-        <a href="#storage" class="nav-item" data-tab="storage">
-          <span class="nav-icon">💾</span>
-          <span class="nav-label">Storage & Lineage</span>
-        </a>
-        <a href="#architecture" class="nav-item" data-tab="architecture">
-          <span class="nav-icon">📐</span>
-          <span class="nav-label">Step Functions ETL</span>
-        </a>
+      <nav class="nav-links" id="mainNav">
+        <a href="#landing" class="nav-link active" data-screen="landing">Home</a>
+        <a href="#dashboard" class="nav-link" data-screen="dashboard">Dashboard</a>
+        <a href="#new-scrape" class="nav-link" data-screen="new-scrape">New Scrape</a>
+        <a href="#pipeline" class="nav-link" data-screen="pipeline">Pipeline Progress</a>
+        <a href="#datasets" class="nav-link" data-screen="datasets">Datasets Library</a>
+        <a href="#table" class="nav-link" data-screen="table">Data Table</a>
+        <a href="#runs" class="nav-link" data-screen="runs">Runs &amp; Logs</a>
+        <a href="#architecture" class="nav-link" data-screen="architecture">Architecture</a>
       </nav>
 
-      <div class="sidebar-footer">
-        <div class="status-widget">
-          <div class="status-indicator">
-            <span class="pulse-dot"></span>
-            <span class="status-label" id="backendStatusLabel">API Gateway: CONNECTED</span>
-          </div>
-          <div class="status-sub">AWS Cloud Active</div>
+      <div class="header-status">
+        <span class="status-pill" id="backendStatusPill">
+          <span class="status-dot active" id="backendStatusDot"></span>
+          <span id="backendStatusText">API Gateway: Online</span>
+        </span>
+        <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Toggle Navigation">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Container -->
+  <main class="app-container">
+
+    <!-- ====================================================================
+         SCREEN 1 & 2: LANDING PAGE (MINIMAL & EDITORIAL)
+         ==================================================================== -->
+    <section class="screen-view active" id="screen-landing">
+      <div class="landing-hero">
+        <div class="editorial-toggle-wrap">
+          <button type="button" class="btn btn-sm btn-outline" id="toggleEditorialBtn">
+            Toggle Editorial View
+          </button>
         </div>
-        <div class="env-cost-badge">
-          <span>Region: <strong>ap-southeast-2</strong></span>
+
+        <h1 class="editorial-headline serif-heading">
+          Collect. Clean. Store.
+        </h1>
+        <p class="landing-sub">
+          A configurable, serverless data pipeline on Amazon Web Services. Ingests arbitrary public websites,
+          validates schemas, repairs mojibake, computes deterministic SHA-256 fingerprints, and archives dual-tier
+          datasets into Amazon S3 and Amazon DynamoDB without server management.
+        </p>
+
+        <!-- Prominent Hero URL Scraper Bar -->
+        <div class="hero-input-bar">
+          <input type="url" id="heroUrlInput" placeholder="https://news.ycombinator.com/ or any public website URL..." value="https://news.ycombinator.com/">
+          <button type="button" class="btn btn-primary" id="heroStartScrapeBtn">
+            Start Scraping
+          </button>
+        </div>
+
+        <div class="landing-quick-presets">
+          <span class="presets-label">Demonstration Presets:</span>
+          <button type="button" class="preset-chip" data-url="https://books.toscrape.com/catalogue/page-1.html" data-id="books_toscrape" data-mode="built-in">Books to Scrape</button>
+          <button type="button" class="preset-chip" data-url="https://quotes.toscrape.com/" data-id="quotes_toscrape" data-mode="built-in">Quotes to Scrape</button>
+          <button type="button" class="preset-chip" data-url="https://news.ycombinator.com/" data-id="hacker_news_live" data-mode="custom">Hacker News</button>
+          <button type="button" class="preset-chip" data-url="https://books.toscrape.com/catalogue/category/books/travel_2/index.html" data-id="travel_books_generic" data-mode="generic">Travel Books (Generic Mode)</button>
         </div>
       </div>
-    </aside>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <!-- Top Bar -->
-      <header class="top-bar">
-        <div class="top-left">
-          <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">☰</button>
-          <div>
-            <h2 class="view-title" id="currentViewTitle">Overview &amp; Telemetry</h2>
-            <p class="view-subtitle" id="currentViewSubtitle">Live pipeline health, dataset statistics, and execution audit history</p>
+      <!-- 4-Step Minimal Workflow Overview -->
+      <div class="workflow-overview-strip">
+        <div class="step-card">
+          <span class="step-num">01 / INGEST</span>
+          <h3 class="step-title">Bounded Ingestion</h3>
+          <p class="step-desc">Strict SSRF validation, DNS verification, robots.txt compliance checking, and bounded HTTP fetch.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-num">02 / EXTRACT</span>
+          <h3 class="step-title">Adaptive Extraction</h3>
+          <p class="step-desc">Generic repeated-element detection for compatible pages, or custom configurable CSS selector mapping.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-num">03 / CLEAN</span>
+          <h3 class="step-title">Schema &amp; Hashing</h3>
+          <p class="step-desc">Enforces required fields, removes mojibake encoding flaws, and computes deterministic SHA-256 hashes.</p>
+        </div>
+        <div class="step-card">
+          <span class="step-num">04 / PERSIST</span>
+          <h3 class="step-title">Dual-Tier Storage</h3>
+          <p class="step-desc">Raw snapshot archived to encrypted Amazon S3 Data Lake; validated records stored in Amazon DynamoDB.</p>
+        </div>
+      </div>
+
+      <!-- Editorial Deep Dive Section (Screen 2 Direction) -->
+      <div class="editorial-section" id="editorialCompositionSection">
+        <div class="editorial-left">
+          <span class="screen-eyebrow">Architectural Philosophy</span>
+          <h3 class="serif-heading">The Architecture of Web Intelligence</h3>
+          <p>
+            Modern web data extraction often struggles with brittle infrastructure, uncontrolled execution loops,
+            and unverified network exposure. <em>The Cloud Scraper</em> addresses these challenges through a strict,
+            least-privilege serverless state machine.
+          </p>
+          <p>
+            Every execution is decoupled: Amazon API Gateway accepts extraction triggers asynchronously with HTTP 202,
+            AWS Step Functions coordinates autonomous Lambda workers, and unexpected target barriers are isolated
+            into an Amazon SQS Dead-Letter Queue without stalling upstream data consumers.
+          </p>
+          <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem;">
+            <button type="button" class="btn btn-primary" id="editorialToNewScrapeBtn">Configure Custom Scrape &rarr;</button>
+            <button type="button" class="btn btn-outline" id="editorialToDashboardBtn">View Live Telemetry &rarr;</button>
           </div>
         </div>
-        <div class="top-right">
-          <span class="badge badge-purple">Step Functions ETL</span>
-          <span class="badge badge-green" id="backendStatusBadge">API Gateway: ONLINE</span>
-          <span class="badge badge-blue">ap-southeast-2</span>
+
+        <div class="editorial-right">
+          <span class="screen-eyebrow">Cloud Infrastructure Specs</span>
+          <div class="editorial-spec-list">
+            <div class="spec-item">
+              <span class="spec-key">AWS Region</span>
+              <span class="spec-val">ap-southeast-2 (Sydney)</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-key">Orchestration</span>
+              <span class="spec-val">AWS Step Functions (the-cloud-scraper-pipeline-sm)</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-key">Public Gateway</span>
+              <span class="spec-val">Amazon API Gateway REST API</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-key">Data Lake</span>
+              <span class="spec-val">Amazon S3 (the-cloud-scraper-bhumi-20261023)</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-key">NoSQL Store</span>
+              <span class="spec-val">Amazon DynamoDB (the-cloud-scraper-records)</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-key">Fault Isolation</span>
+              <span class="spec-val">Amazon SQS DLQ (the-cloud-scraper-scraper-dlq)</span>
+            </div>
+            <div class="spec-item">
+              <span class="spec-key">Global Edge CDN</span>
+              <span class="spec-val">Amazon CloudFront (d3k1ttzl3bzy2k.cloudfront.net)</span>
+            </div>
+          </div>
         </div>
-      </header>
+      </div>
+    </section>
 
-      <div class="content-body">
+    <!-- ====================================================================
+         SCREEN 3: MAIN DASHBOARD
+         ==================================================================== -->
+    <section class="screen-view" id="screen-dashboard">
+      <div class="screen-header">
+        <span class="screen-eyebrow">System Telemetry &bull; Production</span>
+        <h2 class="screen-title serif-heading">Dashboard Overview</h2>
+        <p class="screen-desc">
+          Live pipeline statistics and execution telemetry retrieved from actual backend execution records.
+        </p>
+      </div>
 
-        <!-- ==================== TAB 1: OVERVIEW ==================== -->
-        <section class="tab-pane active" id="pane-overview">
-          <div class="overview-header-card card">
-            <div class="overview-header-left">
-              <span class="section-tag">Executive Summary</span>
-              <h3 class="card-hero-title">Cloud Architecture Design — Automated Data Pipeline</h3>
-              <p class="card-hero-desc">
-                Serverless web intelligence engine engineered with Python Requests & BeautifulSoup, schema hygiene validation, deterministic SHA-256 fingerprinting, dual-tier cloud data lake orchestration, and real-time FinOps cost tracking.
-              </p>
+      <!-- Real Metrics Row -->
+      <div class="metrics-row">
+        <div class="metric-box">
+          <span class="metric-label">Total Completed Runs</span>
+          <div class="metric-val" id="statCompletedRuns">0</div>
+          <div class="metric-sub" id="statCompletedRunsSub">Across cloud &amp; local runs</div>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">Successful vs Quarantined</span>
+          <div class="metric-val" id="statSuccessRatio">0 / 0</div>
+          <div class="metric-sub" id="statSuccessRatioSub">0 succeeded, 0 to DLQ</div>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">Total Records Stored</span>
+          <div class="metric-val" id="statTotalRecords">0</div>
+          <div class="metric-sub">Active in Amazon DynamoDB</div>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">Latest Job Duration</span>
+          <div class="metric-val" id="statLatestDuration">0.00s</div>
+          <div class="metric-sub">End-to-end pipeline latency</div>
+        </div>
+      </div>
+
+      <!-- Dashboard Split: Recent Activity & Quick Navigation -->
+      <div class="dashboard-split">
+        <div class="surface-panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Recent Scraping Activity</h3>
+            <button type="button" class="btn btn-sm btn-outline" id="dashRefreshActivityBtn">Refresh</button>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Target ID</th>
+                  <th>Mode</th>
+                  <th>Status</th>
+                  <th>Records</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody id="dashRecentActivityBody">
+                <tr>
+                  <td colspan="6" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                    Loading recent executions...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="surface-panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Quick Actions &amp; Datasets</h3>
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+            Jump directly into a scraping workflow or inspect stored cloud datasets.
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+            <button type="button" class="btn btn-primary" id="dashStartScrapeBtn">
+              ⚡ Configure New Scrape
+            </button>
+            <button type="button" class="btn btn-secondary" id="dashViewDatasetsBtn">
+              📂 Browse Datasets Library
+            </button>
+            <button type="button" class="btn btn-outline" id="dashViewLogsBtn">
+              📜 Audit Execution Logs
+            </button>
+          </div>
+
+          <div style="margin-top: 1.75rem; border-top: 1px solid var(--border-subtle); padding-top: 1.25rem;">
+            <span class="screen-eyebrow">Active Datasets</span>
+            <div id="dashActiveDatasetsList" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem;">
+              <span style="font-size: 0.8rem; color: var(--text-muted);">Scanning stored datasets...</span>
             </div>
-            <div class="overview-header-right">
-              <button class="btn btn-primary" id="overviewQuickScrapeBtn">
-                <span>▶</span> Launch Scraper Workspace
-              </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         SCREEN 4: NEW SCRAPE (ADVANCED) & PREFLIGHT
+         ==================================================================== -->
+    <section class="screen-view" id="screen-new-scrape">
+      <div class="screen-header">
+        <span class="screen-eyebrow">Extraction Engine</span>
+        <h2 class="screen-title serif-heading">Configure New Scrape</h2>
+        <p class="screen-desc">
+          Enter any eligible public website URL, run an SSRF and compatibility preflight check, configure optional
+          selectors, and trigger the cloud ETL workflow.
+        </p>
+      </div>
+
+      <div class="scrape-config-grid">
+        <!-- Configuration Form -->
+        <div class="surface-panel">
+          <div class="form-group">
+            <label class="form-label" for="scrapeUrlInput">Target Website URL *</label>
+            <input type="url" class="input-text input-mono" id="scrapeUrlInput" placeholder="https://example.com/items" required value="https://news.ycombinator.com/">
+            <span class="form-hint">Must use standard HTTP/HTTPS schemes. Private IPs and cloud metadata are forbidden by SSRF filters.</span>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="scrapeTargetIdInput">Target Identifier</label>
+              <input type="text" class="input-text input-mono" id="scrapeTargetIdInput" placeholder="e.g. my_target_news" value="hacker_news_live">
+              <span class="form-hint">Unique slug for storage partitioning.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="scrapeTargetNameInput">Display Name (Optional)</label>
+              <input type="text" class="input-text" id="scrapeTargetNameInput" placeholder="e.g. Technology News Feed" value="Hacker News Feed">
             </div>
           </div>
 
-          <!-- Real Metrics Grid -->
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-icon-wrap icon-blue">📥</div>
-              <div class="stat-info">
-                <span class="stat-label">Total Scraped</span>
-                <span class="stat-value" id="statTotalScraped">0</span>
-                <span class="stat-sub">Across all executions</span>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon-wrap icon-green">✅</div>
-              <div class="stat-info">
-                <span class="stat-label">Schema Validated</span>
-                <span class="stat-value text-green" id="statTotalValid">0</span>
-                <span class="stat-sub">Quality checked items</span>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon-wrap icon-purple">⚡</div>
-              <div class="stat-info">
-                <span class="stat-label">Duplicates Filtered</span>
-                <span class="stat-value text-purple" id="statTotalDuplicates">0</span>
-                <span class="stat-sub">SHA-256 fingerprinting</span>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon-wrap icon-cyan">📦</div>
-              <div class="stat-info">
-                <span class="stat-label">Clean Unique Entities</span>
-                <span class="stat-value text-blue" id="statTotalTransformed">0</span>
-                <span class="stat-sub">Stored in local store</span>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon-wrap icon-yellow">🔄</div>
-              <div class="stat-info">
-                <span class="stat-label">Executions Run</span>
-                <span class="stat-value" id="statRunsSummary">0 / 0</span>
-                <span class="stat-sub" id="statRunsSub">0 successful, 0 failed</span>
-              </div>
-            </div>
-
-            <div class="stat-card">
-              <div class="stat-icon-wrap icon-gold">⏱️</div>
-              <div class="stat-info">
-                <span class="stat-label">Latest Latency</span>
-                <span class="stat-value" id="statLatestDuration">0.00s</span>
-                <span class="stat-sub">End-to-end pipeline run</span>
-              </div>
+          <!-- Extraction Mode Radios -->
+          <div class="form-group">
+            <label class="form-label">Extraction Strategy</label>
+            <div style="display: flex; gap: 1.5rem; margin-top: 0.35rem;">
+              <label style="font-size: 0.85rem; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <input type="radio" name="extractionModeRadio" value="generic" checked>
+                <span><strong>Generic Auto-Extraction</strong> (Repeated blocks / semantic text)</span>
+              </label>
+              <label style="font-size: 0.85rem; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <input type="radio" name="extractionModeRadio" value="custom">
+                <span><strong>Custom CSS Selectors</strong> (Specified fields)</span>
+              </label>
             </div>
           </div>
 
-          <!-- Live AWS Cloud Environment Cards -->
-          <div class="grid-2col">
-            <div class="card env-card active-env-card">
-              <div class="card-header">
-                <div class="title-with-icon">
-                  <span class="status-indicator-green">●</span>
-                  <h4 class="card-title">AWS Production Cloud Environment (Active)</h4>
-                </div>
-                <span class="badge badge-green">Live &amp; Deployed</span>
+          <!-- Configurable CSS Selectors Panel -->
+          <div class="selector-mapping-panel" id="customSelectorsContainer" style="display: none;">
+            <span class="screen-eyebrow">CSS Selector Mapping</span>
+            <div class="form-group" style="margin-bottom: 0.6rem;">
+              <label class="form-label" for="cssContainerSelector">Item Container Selector</label>
+              <input type="text" class="input-text input-mono" id="cssContainerSelector" placeholder="e.g. article.product_pod or tr.athing" value="tr.athing">
+              <span class="form-hint">CSS selector matching each individual repeating item element.</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div class="form-group" style="margin-bottom: 0.6rem;">
+                <label class="form-label" for="cssTitleSelector">Title Selector</label>
+                <input type="text" class="input-text input-mono" id="cssTitleSelector" placeholder="e.g. span.titleline a" value="span.titleline a">
               </div>
-              <p class="env-desc">Orchestrated by AWS Step Functions State Machine across 6 AWS Lambda microservices, Amazon API Gateway, and Amazon EventBridge in Sydney (<code>ap-southeast-2</code>).</p>
-              <div class="env-detail-box">
-                <div class="detail-row">
-                  <span class="detail-name">CloudFormation Stack:</span>
-                  <span class="detail-val"><code>the-cloud-scraper</code> (CREATE_COMPLETE)</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-name">State Machine ARN:</span>
-                  <span class="detail-val"><code>the-cloud-scraper-pipeline-sm</code></span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-name">API Gateway Endpoint:</span>
-                  <span class="detail-val"><code>POST https://xehoja83gg.execute-api.ap-southeast-2.amazonaws.com/prod/scrape</code></span>
-                </div>
+              <div class="form-group" style="margin-bottom: 0.6rem;">
+                <label class="form-label" for="cssLinkSelector">Detail Link Selector</label>
+                <input type="text" class="input-text input-mono" id="cssLinkSelector" placeholder="e.g. a" value="span.titleline a">
               </div>
             </div>
-
-            <div class="card env-card cloud-env-card">
-              <div class="card-header">
-                <div class="title-with-icon">
-                  <span class="status-indicator-green">●</span>
-                  <h4 class="card-title">Dual-Tier Cloud Storage &amp; Fault Tolerance</h4>
-                </div>
-                <span class="badge badge-purple">Serverless Data Lake</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="cssExtraKey">Custom Field Key (Optional)</label>
+                <input type="text" class="input-text input-mono" id="cssExtraKey" placeholder="e.g. rank">
               </div>
-              <p class="env-desc">Production immutable object archival and fast NoSQL deduplicated storage with SQS Dead-Letter Queue quarantine and SNS real-time alerting.</p>
-              <div class="env-detail-box">
-                <div class="detail-row">
-                  <span class="detail-name">Amazon S3 Data Lake:</span>
-                  <span class="detail-val"><code>the-cloud-scraper-bhumi-20261023</code> (AES256)</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-name">DynamoDB Structured Store:</span>
-                  <span class="detail-val"><code>the-cloud-scraper-records</code> (On-Demand)</span>
-                </div>
-                <div class="detail-row">
-                  <span class="detail-name">Fault Tolerance DLQ:</span>
-                  <span class="detail-val"><code>the-cloud-scraper-scraper-dlq</code> (14-Day Retention)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Recent Runs Preview -->
-          <div class="card">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span>⏱️</span>
-                <h4 class="card-title">Recent Pipeline Runs</h4>
-              </div>
-              <button class="btn btn-sm btn-outline" id="overviewViewAllHistoryBtn">View Full History &rarr;</button>
-            </div>
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Timestamp</th>
-                    <th>Target Feed</th>
-                    <th>Mode</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Scraped</th>
-                    <th>Clean</th>
-                    <th>Est. Cost</th>
-                  </tr>
-                </thead>
-                <tbody id="overviewRecentRunsBody">
-                  <tr><td colspan="8" class="text-center text-muted">Loading execution history...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <!-- ==================== TAB 2: SCRAPE WORKSPACE ==================== -->
-        <section class="tab-pane" id="pane-workspace">
-          <div class="card control-card">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span class="section-icon">🎮</span>
-                <h3 class="card-title">Scraping Workspace & Execution Controls</h3>
-              </div>
-              <span class="badge badge-blue">SSRF &amp; Robots.txt Protected</span>
-            </div>
-
-            <div class="workspace-grid">
-              <!-- Left Form Controls -->
-              <div class="form-col">
-                <div class="form-group">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <label for="siteSelector" class="form-label">Target Website / Data Source</label>
-                    <button type="button" class="chip-btn" id="toggleCustomTargetBtn">⚙ Configure Custom Target</button>
-                  </div>
-                  <select id="siteSelector" class="form-control">
-                    <optgroup label="Default Permitted Sandboxes">
-                      <option value="books_toscrape" selected>Books to Scrape (https://books.toscrape.com/)</option>
-                      <option value="quotes_toscrape">Quotes to Scrape (https://quotes.toscrape.com/)</option>
-                      <option value="webscraper_laptops">WebScraper Laptops Sandbox (117 test products)</option>
-                      <option value="hacker_news">Hacker News Permitted Feed (30 frontpage stories)</option>
-                    </optgroup>
-                    <optgroup label="Live Scraped Sources (AWS DynamoDB)" id="dynamicTargetsOptgroup">
-                      <option value="hacker_news_live">Hacker News Live (news.ycombinator.com)</option>
-                      <option value="travel_books_generic">Travel Books (Generic Mode)</option>
-                    </optgroup>
-                    <optgroup label="Custom On-The-Fly">
-                      <option value="custom_url_target">+ Enter New Custom Target / URL...</option>
-                    </optgroup>
-                  </select>
-                  <small class="form-hint" id="siteHint">Books to Scrape: E-commerce sandbox evaluating product titles, prices in GBP, and 1-5 star ratings.</small>
-                </div>
-
-                <!-- Quick Presets -->
-                <div class="form-group">
-                  <label class="form-label" style="font-size:0.75rem; color:var(--text-dim);">Quick Target Presets:</label>
-                  <div class="quick-presets-bar">
-                    <button type="button" class="chip-btn" id="presetBooksBtn">📚 Books Sandbox</button>
-                    <button type="button" class="chip-btn" id="presetQuotesBtn">💬 Quotes Sandbox</button>
-                    <button type="button" class="chip-btn" id="presetHnBtn">🔥 Hacker News Live</button>
-                    <button type="button" class="chip-btn" id="presetTravelBtn">✈️ Travel Books (Generic)</button>
-                    <button type="button" class="chip-btn" id="presetCustomBtn">🌐 New Custom URL</button>
-                  </div>
-                </div>
-
-                <!-- Custom Target Builder Box (collapsible / dynamic) -->
-                <div class="custom-target-box" id="customTargetBox" style="display: none;">
-                  <div class="custom-target-header">
-                    <span class="custom-target-title"><span>🛠️</span> General-Purpose Target Configurator</span>
-                    <span class="badge badge-blue">Zero Code Required</span>
-                  </div>
-
-                  <div class="form-row-2">
-                    <div class="form-group">
-                      <label for="customTargetIdInput" class="form-label">Target ID / Slug</label>
-                      <input type="text" id="customTargetIdInput" class="form-control" placeholder="e.g. my_news_feed" pattern="[a-zA-Z0-9_-]+">
-                      <small class="form-hint">Unique identifier for DynamoDB and S3 partitions.</small>
-                    </div>
-                    <div class="form-group">
-                      <label for="customTargetNameInput" class="form-label">Target Display Name</label>
-                      <input type="text" id="customTargetNameInput" class="form-control" placeholder="e.g. Technology News Feed">
-                      <small class="form-hint">Human-readable label for dashboard.</small>
-                    </div>
-                  </div>
-
-                  <div class="form-group">
-                    <label for="customUrlInput" class="form-label">Target Website URL <span class="label-optional">(HTTP / HTTPS)</span></label>
-                    <input type="url" id="customUrlInput" class="form-control" placeholder="https://example.com/items">
-                    <small class="form-hint">Backend strictly enforces SSRF protection (localhost and private subnets are blocked).</small>
-                  </div>
-
-                  <div class="form-group">
-                    <label class="form-label">Extraction Strategy</label>
-                    <div class="radio-options">
-                      <label class="radio-label">
-                        <input type="radio" name="extractionMode" value="generic" checked>
-                        <span><strong>Automatic Generic Extraction (Recommended)</strong> — Heuristically extracts cards, article containers, headings, links, and paragraphs without requiring custom CSS selectors.</span>
-                      </label>
-                      <label class="radio-label">
-                        <input type="radio" name="extractionMode" value="custom">
-                        <span><strong>Configurable CSS Selectors</strong> — Target specific HTML DOM elements using CSS selectors and attribute lookups.</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <!-- CSS Selectors Input Panel -->
-                  <div id="cssSelectorsPanel" style="display: none; flex-direction:column; gap:0.75rem; background:var(--bg-input); padding:0.85rem; border-radius:var(--radius-sm); border:1px solid var(--border-color);">
-                    <div class="form-group">
-                      <label for="customContainerSelector" class="form-label">Item Container Selector</label>
-                      <input type="text" id="customContainerSelector" class="form-control" placeholder="e.g. tr.athing, article.post, div.product-wrapper">
-                      <small class="form-hint">CSS selector matching each repeating item card on the page.</small>
-                    </div>
-                    <div class="form-row-2">
-                      <div class="form-group">
-                        <label for="customTitleSelector" class="form-label">Title / Heading Selector</label>
-                        <input type="text" id="customTitleSelector" class="form-control" placeholder="e.g. span.titleline > a, h2.title">
-                      </div>
-                      <div class="form-group">
-                        <label for="customLinkSelector" class="form-label">Detail Link Selector</label>
-                        <input type="text" id="customLinkSelector" class="form-control" placeholder="e.g. a@href, span.titleline > a">
-                      </div>
-                    </div>
-                    <div class="form-row-2">
-                      <div class="form-group">
-                        <label for="customExtraFieldKey" class="form-label">Optional Field 3 Name</label>
-                        <input type="text" id="customExtraFieldKey" class="form-control" placeholder="e.g. author, price, rank">
-                      </div>
-                      <div class="form-group">
-                        <label for="customExtraFieldSelector" class="form-label">Optional Field 3 Selector</label>
-                        <input type="text" id="customExtraFieldSelector" class="form-control" placeholder="e.g. small.author, h4.price, span.rank">
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style="display:flex; justify-content:flex-end;">
-                    <button type="button" class="btn btn-sm btn-outline" id="saveTargetBtn">
-                      <span>💾</span> Save Target to Cloud Registry (DynamoDB)
-                    </button>
-                  </div>
-                </div>
-
-                <div class="form-row-2">
-                  <div class="form-group">
-                    <label for="pageLimitInput" class="form-label">Pagination Limit (1–5 pages)</label>
-                    <input type="number" id="pageLimitInput" class="form-control" min="1" max="5" value="1">
-                    <small class="form-hint">Safe upper bound avoids aggressive traffic.</small>
-                  </div>
-
-                  <div class="form-group">
-                    <label for="timeoutInput" class="form-label">Request Timeout (3–30s)</label>
-                    <input type="number" id="timeoutInput" class="form-control" min="3" max="30" value="15">
-                    <small class="form-hint">Guards against hung connections.</small>
-                  </div>
-                </div>
-
-                <div class="form-actions">
-                  <button id="scrapeBtn" class="btn btn-primary btn-lg">
-                    <span id="scrapeBtnIcon">⚡</span>
-                    <span id="scrapeBtnText">Start Scraping</span>
-                  </button>
-                  <button id="testSsrfBtn" class="btn btn-danger btn-sm" title="Demonstrates instant rejection of SSRF attempts (Test F)">
-                    <span>🛡️</span> Test SSRF Guardrail
-                  </button>
-                  <button id="simulateFailBtn" class="btn btn-warning btn-sm" title="Dispatches invalid 404 target to show Step Functions catch block & SQS DLQ routing (Test E)">
-                    <span>⚠️</span> Test Fault Tolerance (DLQ)
-                  </button>
-                </div>
-              </div>
-
-              <!-- Right Side Info Card -->
-              <div class="workspace-info-card">
-                <h4 class="info-card-title">Security &amp; General-Purpose Scraping Engine</h4>
-                <ul class="info-list">
-                  <li><strong>Universal URL Support:</strong> Scrapes any public website (news, e-commerce, articles, quotes, test sandboxes).</li>
-                  <li><strong>Robots.txt Checked:</strong> Automated verification before every fetch.</li>
-                  <li><strong>SSRF Hardened:</strong> Localhost, RFC 1918 subnets, and AWS IMDS endpoints strictly denied.</li>
-                  <li><strong>Dual Mode Extraction:</strong> Automatic DOM heuristic detection OR custom CSS selector extraction.</li>
-                  <li><strong>Deterministic Deduplication:</strong> SHA-256 fingerprinting prevents duplicate records.</li>
-                  <li><strong>Zero Stalling:</strong> State machine traps failures and routes payload to SQS DLQ.</li>
-                </ul>
-
-                <div class="active-source-badge-box">
-                  <span class="badge-box-label">Active Target URL:</span>
-                  <code id="activeTargetUrlPreview">https://books.toscrape.com/catalogue/page-1.html</code>
-                </div>
-
-                <div class="active-source-badge-box">
-                  <span class="badge-box-label">Extraction Strategy:</span>
-                  <span class="badge badge-purple" id="activeStrategyBadge">Configured Site Profile</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Loading State Bar -->
-            <div class="loading-bar-wrap" id="loadingBarWrap" style="display: none;">
-              <div class="loading-bar">
-                <div class="loading-progress"></div>
-              </div>
-              <p class="loading-status-text" id="loadingStatusText">Initiating serverless pipeline execution...</p>
-            </div>
-
-            <!-- Error Banner -->
-            <div class="alert alert-error" id="errorBanner" style="display: none;">
-              <div class="alert-icon">⚠️</div>
-              <div class="alert-content">
-                <strong id="errorTitle">Execution Error</strong>
-                <p id="errorMsg">Details...</p>
-              </div>
-            </div>
-
-            <!-- Success Banner -->
-            <div class="alert alert-success" id="successBanner" style="display: none;">
-              <div class="alert-icon">✅</div>
-              <div class="alert-content">
-                <strong id="successTitle">Pipeline Execution Completed</strong>
-                <p id="successMsg">Data successfully scraped, cleaned, transformed, and saved.</p>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="cssExtraSelector">Custom Field Selector</label>
+                <input type="text" class="input-text input-mono" id="cssExtraSelector" placeholder="e.g. span.rank">
               </div>
             </div>
           </div>
 
-          <!-- Step Functions Live State Machine Tracker -->
-          <div class="card stages-card" id="stagesCard" style="display: none;">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span class="section-icon">🔄</span>
-                <h3 class="card-title">Step Functions State Machine Lifecycle</h3>
-              </div>
-              <span class="badge badge-purple" id="sfnExecIdBadge">Execution: Idle</span>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="scrapePageLimitInput">Pagination Limit</label>
+              <select class="input-text input-mono" id="scrapePageLimitInput">
+                <option value="1" selected>1 Page (Initial View)</option>
+                <option value="2">2 Pages</option>
+                <option value="3">3 Pages</option>
+                <option value="5">5 Pages (Bounded Limit)</option>
+              </select>
+              <span class="form-hint">Safety bound prevents infinite crawler loops.</span>
             </div>
-            <div class="stages-list" id="stagesList">
-              <!-- Rendered dynamically -->
-            </div>
-          </div>
-        </section>
-
-        <!-- ==================== TAB 3: RESULTS & DATA ==================== -->
-        <section class="tab-pane" id="pane-results">
-          <div class="card results-card">
-            <div class="results-header">
-              <div class="results-title-wrap">
-                <span class="section-icon">📊</span>
-                <h3 class="card-title">Structured Results Dataset</h3>
-                <span class="badge badge-blue" id="tableCountBadge">0 records</span>
-              </div>
-              <div class="table-actions">
-                <label for="resultsDatasetSelector" style="font-size:0.8rem; color:var(--text-dim); margin-right:-0.3rem;">Dataset:</label>
-                <select id="resultsDatasetSelector" class="form-control form-control-sm">
-                  <option value="books_toscrape">Books to Scrape</option>
-                  <option value="quotes_toscrape">Quotes to Scrape</option>
-                  <option value="hacker_news_live">Hacker News Live</option>
-                  <option value="travel_books_generic">Travel Books (Generic)</option>
-                </select>
-                <button id="refreshResultsBtn" class="btn btn-sm btn-outline" title="Fetch latest persisted records from DynamoDB">🔄 Refresh DynamoDB</button>
-                <input type="text" id="tableSearchInput" class="table-search" placeholder="Search title, price, content...">
-                <select id="pageSizeSelector" class="form-control form-control-sm">
-                  <option value="10">10 / page</option>
-                  <option value="25" selected>25 / page</option>
-                  <option value="50">50 / page</option>
-                  <option value="1000">All</option>
-                </select>
-                <button id="downloadCsvBtn" class="btn btn-sm btn-outline" title="Export as RFC 4180 CSV">⬇ Export CSV</button>
-                <button id="downloadJsonBtn" class="btn btn-sm btn-primary" title="Export as JSON">⬇ Export JSON</button>
-              </div>
-            </div>
-
-            <!-- Table Responsive Container -->
-            <div class="table-responsive">
-              <table class="data-table" id="resultsTable">
-                <thead>
-                  <tr id="tableHeaders">
-                    <th>#</th>
-                    <th>Title / Content</th>
-                    <th>Price / Metric</th>
-                    <th>Rating / Details</th>
-                    <th>Record ID (SHA-256)</th>
-                  </tr>
-                </thead>
-                <tbody id="tableBody">
-                  <tr><td colspan="5" class="text-center text-muted">No records loaded yet. Go to Scrape Workspace and click "Scrape Now".</td></tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- Pagination Bar -->
-            <div class="pagination-bar" id="paginationBar">
-              <span class="pagination-info" id="paginationInfo">Showing 0 of 0</span>
-              <div class="pagination-buttons">
-                <button class="btn btn-sm btn-outline" id="prevPageBtn" disabled>&larr; Previous</button>
-                <span class="page-current" id="currentPageIndicator">Page 1</span>
-                <button class="btn btn-sm btn-outline" id="nextPageBtn" disabled>Next &rarr;</button>
-              </div>
+            <div class="form-group">
+              <label class="form-label" for="scrapeTimeoutInput">Request Timeout</label>
+              <select class="input-text input-mono" id="scrapeTimeoutInput">
+                <option value="10">10 Seconds</option>
+                <option value="15" selected>15 Seconds (Recommended)</option>
+                <option value="30">30 Seconds (Maximum)</option>
+              </select>
+              <span class="form-hint">Enforced by Lambda execution boundary.</span>
             </div>
           </div>
 
-          <!-- Raw JSON Viewer -->
-          <div class="card json-card">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span class="section-icon">🔍</span>
-                <h4 class="card-title">Standardized JSON Dataset Inspection</h4>
-              </div>
-              <div class="json-actions">
-                <button id="copyJsonBtn" class="btn btn-sm btn-outline">📋 Copy JSON</button>
-              </div>
-            </div>
-            <pre class="json-viewer"><code id="jsonCodeBlock">// Live JSON payload will appear here after scraping</code></pre>
+          <!-- Action Buttons -->
+          <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" id="runPreflightCheckBtn">
+              🔍 Run Preflight Check
+            </button>
+            <button type="button" class="btn btn-primary" id="startScrapeExecutionBtn">
+              ⚡ Start Scraping
+            </button>
+            <button type="button" class="btn btn-outline" id="saveTargetRegistryBtn">
+              💾 Save to Cloud Registry
+            </button>
           </div>
-        </section>
+        </div>
 
-        <!-- ==================== TAB 4: EXECUTION HISTORY ==================== -->
-        <section class="tab-pane" id="pane-history">
-          <div class="card">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span class="section-icon">📜</span>
-                <h3 class="card-title">Serverless Execution Audit Log</h3>
-              </div>
-              <div class="table-actions">
-                <button id="refreshHistoryBtn" class="btn btn-sm btn-outline">🔄 Refresh History</button>
-              </div>
-            </div>
-            <p class="history-desc">Persisted audit trail of pipeline runs saved in <code>output/history.json</code>, tracking execution duration, records harvested, validity rate, and calculated FinOps cost.</p>
-            <div class="table-responsive">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Execution ID</th>
-                    <th>Timestamp</th>
-                    <th>Target Feed</th>
-                    <th>Mode</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Scraped</th>
-                    <th>Valid</th>
-                    <th>Duplicates</th>
-                    <th>Clean Stored</th>
-                    <th>Est. Cost</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="fullHistoryTableBody">
-                  <tr><td colspan="12" class="text-center text-muted">Loading execution history...</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <!-- ==================== TAB 5: STORAGE & LINEAGE ==================== -->
-        <section class="tab-pane" id="pane-storage">
-          <div class="card storage-card">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span class="section-icon">💾</span>
-                <h3 class="card-title">Dual-Tier Storage Architecture &amp; Lineage</h3>
-              </div>
-              <span class="badge badge-outline">Cloud vs Local Disambiguation</span>
-            </div>
-
-            <div class="storage-grid">
-              <!-- Tier 1: Production AWS Cloud Dual-Tier Storage (Active) -->
-              <div class="storage-box storage-local" style="border-color: rgba(34, 197, 94, 0.4);">
-                <div class="storage-box-header">
-                  <span class="status-indicator-green">●</span>
-                  <strong>AWS Production Cloud Storage (Active &amp; Deployed)</strong>
-                </div>
-                <p class="storage-desc">
-                  Dual-tier serverless cloud storage in <code>ap-southeast-2</code> with immutable raw snapshot archiving and fast, deduplicated structured NoSQL querying.
-                </p>
-                <ul class="cloud-targets-list" style="margin-top:0.75rem;">
-                  <li>
-                    <div>
-                      <strong>Amazon S3 Data Lake (Raw HTML Archive):</strong>
-                      <code>s3://the-cloud-scraper-bhumi-20261023/raw/{site_id}/{timestamp}/page.html</code>
-                    </div>
-                    <span class="tag tag-green">Active (AES-256)</span>
-                  </li>
-                  <li>
-                    <div>
-                      <strong>Amazon S3 Transformed Clean Datasets:</strong>
-                      <code>s3://the-cloud-scraper-bhumi-20261023/transform/{site_id}/{timestamp}/records.json</code>
-                    </div>
-                    <span class="tag tag-green">Active (AES-256)</span>
-                  </li>
-                  <li>
-                    <div>
-                      <strong>Amazon DynamoDB Structured NoSQL Store:</strong>
-                      <code>the-cloud-scraper-records</code> (PK: <code>site_id</code>, SK: <code>record_id</code>)
-                    </div>
-                    <span class="tag tag-green">Active (On-Demand)</span>
-                  </li>
-                  <li>
-                    <div>
-                      <strong>Amazon SQS Dead-Letter Queue (DLQ):</strong>
-                      <code>the-cloud-scraper-scraper-dlq</code> (14-day retention quarantine)
-                    </div>
-                    <span class="tag tag-purple">Active (Fault Tolerant)</span>
-                  </li>
-                </ul>
-              </div>
-
-              <!-- Tier 2: Local Immutable Storage & Export -->
-              <div class="storage-box storage-cloud">
-                <div class="storage-box-header">
-                  <span class="status-indicator-green">●</span>
-                  <strong>Client Dataset Inspection &amp; Direct Export</strong>
-                </div>
-                <p class="storage-desc">
-                  Instant client-side RFC 4180 CSV and formatted JSON export directly from the live DynamoDB records loaded into memory.
-                </p>
-                <div class="storage-path-box">
-                  <code>Selected Target: <span id="localFilePath">DynamoDB: the-cloud-scraper-records</span></code>
-                </div>
-                <div class="storage-files-preview" id="storageFilesPreview">
-                  <!-- Rendered dynamically -->
-                </div>
-                <div class="storage-action">
-                  <button id="downloadLocalBtn" class="btn btn-sm btn-primary">⬇ Download Active Dataset (.json)</button>
-                  <button id="downloadCsvLocalBtn" class="btn btn-sm btn-outline">⬇ Download CSV (.csv)</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- ==================== TAB 6: ARCHITECTURE ==================== -->
-        <section class="tab-pane" id="pane-architecture">
-          <div class="card arch-card">
-            <div class="card-header">
-              <div class="title-with-icon">
-                <span class="section-icon">📐</span>
-                <h3 class="card-title">Serverless Step Functions ETL Workflow Pattern</h3>
-              </div>
-              <span class="badge badge-purple">AWS Step Functions State Machine</span>
-            </div>
-            <p class="arch-desc">
-              The Cloud Scraper replaces traditional manual file uploads with an active, automated pipeline orchestrated by AWS Step Functions. Below is the full state machine transition pattern:
+        <!-- Preflight & Diagnostics Assistant Column -->
+        <div>
+          <div class="surface-panel">
+            <span class="screen-eyebrow">Pre-Flight Safety &amp; Compatibility</span>
+            <h3 class="panel-title" style="margin: 0.35rem 0 0.75rem 0;">Compatibility Checker</h3>
+            <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+              Before launching a full AWS Step Functions workflow, test your target URL against our pre-flight analyzer.
+              It checks SSRF safety, reachability, HTTP headers, robots.txt, and detects whether client-side JavaScript rendering
+              or anti-bot challenge solving is required.
             </p>
 
-            <div class="pipeline-flow-diagram">
-              <div class="flow-step">
-                <span class="flow-num">1</span>
-                <strong>Trigger</strong>
-                <small>EventBridge / API Gateway</small>
+            <div class="preflight-result-box" id="preflightResultBox" style="display: none;">
+              <div class="preflight-header">
+                <span style="font-weight: 500;" id="preflightStatusTitle">Preflight Result</span>
+                <span class="badge" id="preflightStatusBadge">COMPATIBLE</span>
               </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">2</span>
-                <strong>Dispatcher</strong>
-                <small>Lambda + SQS Job Queue</small>
-              </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">3</span>
-                <strong>Orchestrator</strong>
-                <small>AWS Step Functions</small>
-              </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">4</span>
-                <strong>Scraper</strong>
-                <small>Requests + BS4 (robots.txt)</small>
-              </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">5</span>
-                <strong>Validator</strong>
-                <small>Schema &amp; Quality Filter</small>
-              </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">6</span>
-                <strong>Transform</strong>
-                <small>SHA-256 Deduplication</small>
-              </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">7</span>
-                <strong>Storage</strong>
-                <small>Local JSON &amp; DynamoDB</small>
-              </div>
-              <span class="flow-arrow">&rarr;</span>
-              <div class="flow-step">
-                <span class="flow-num">8</span>
-                <strong>Telemetry</strong>
-                <small>FinOps Cost &amp; SNS Alert</small>
+              <div class="preflight-details" id="preflightDetailsContent">
+                <!-- Injected via JavaScript -->
               </div>
             </div>
 
-            <!-- Fault Tolerance & DLQ Callout -->
-            <div class="arch-callout">
-              <div class="callout-icon">🛡️</div>
-              <div class="callout-body">
-                <h4>Fault Tolerance &amp; Dead-Letter Queue (DLQ) Architecture</h4>
-                <p>
-                  Any state failure in the Step Functions state machine is caught by a fail-safe catch block. The failed execution payload is quarantined into the <strong>Amazon SQS Dead Letter Queue (<code>ScraperDLQ</code>)</strong> to prevent pipeline stalling and preserve error lineage for redrive replay.
-                </p>
-              </div>
+            <div style="margin-top: 1.5rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+              <span class="screen-eyebrow">Safety Guardrails</span>
+              <ul style="font-size: 0.78rem; color: var(--text-muted); margin-left: 1.2rem; margin-top: 0.4rem; line-height: 1.6;">
+                <li>Private IP &amp; AWS metadata access (169.254.169.254) blocked.</li>
+                <li>Strict 5MB response size limit per request.</li>
+                <li>Polite 1-second delay between paginated requests.</li>
+                <li>Automatic quarantine of unhandled errors to SQS DLQ.</li>
+              </ul>
             </div>
           </div>
-        </section>
-
+        </div>
       </div>
-    </main>
-  </div>
+    </section>
+
+    <!-- ====================================================================
+         SCREEN 5: PIPELINE PROGRESS
+         ==================================================================== -->
+    <section class="screen-view" id="screen-pipeline">
+      <div class="screen-header">
+        <span class="screen-eyebrow">Execution Engine &bull; AWS Step Functions</span>
+        <h2 class="screen-title serif-heading">Pipeline Progress</h2>
+        <p class="screen-desc">
+          Live stage progression tracking the serverless ETL lifecycle: Ingestion &rarr; Scraping &rarr; Schema Validation &rarr; Transformation &rarr; Dual-Tier Storage.
+        </p>
+      </div>
+
+      <div class="pipeline-progress-container">
+        <!-- Alert Banners -->
+        <div class="alert-banner success" id="pipelineSuccessBanner">
+          <div class="alert-title" id="pipelineSuccessTitle">Execution Succeeded</div>
+          <div class="alert-msg" id="pipelineSuccessMsg">All pipeline stages passed. Dataset stored in Amazon DynamoDB.</div>
+        </div>
+
+        <div class="alert-banner danger" id="pipelineFailureBanner">
+          <div class="alert-title" id="pipelineFailureTitle">Pipeline Caught Failure &rarr; Quarantined to SQS DLQ</div>
+          <div class="alert-msg" id="pipelineFailureMsg">Error trapped by Step Functions Catch block.</div>
+        </div>
+
+        <!-- Execution Metadata Card -->
+        <div class="surface-panel" style="margin-bottom: 1.5rem;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <span class="screen-eyebrow">Active Execution ID</span>
+              <code style="font-size: 0.85rem;" id="pipelineExecIdDisplay">No active execution</code>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <span class="badge" id="pipelineStateBadge">IDLE</span>
+              <span style="font-size: 0.8rem; color: var(--text-muted);" id="pipelineElapsedTimer">0.0s elapsed</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6-Stage Vertical Timeline -->
+        <div class="pipeline-timeline" id="pipelineTimeline">
+          <!-- Step 1 -->
+          <div class="timeline-step" id="timelineStep1">
+            <div class="timeline-indicator">1</div>
+            <div class="timeline-content">
+              <div class="timeline-step-header">
+                <span class="timeline-step-title">API Gateway Ingestion &amp; Dispatch</span>
+                <span class="timeline-step-service">Amazon API Gateway / EventBridge</span>
+              </div>
+              <p class="timeline-step-detail" id="timelineStep1Detail">Awaiting dispatch trigger.</p>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="timeline-step" id="timelineStep2">
+            <div class="timeline-indicator">2</div>
+            <div class="timeline-content">
+              <div class="timeline-step-header">
+                <span class="timeline-step-title">Job Dispatcher Lambda</span>
+                <span class="timeline-step-service">AWS Lambda (start_step_function.py)</span>
+              </div>
+              <p class="timeline-step-detail" id="timelineStep2Detail">Target resolution and State Machine initiation.</p>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="timeline-step" id="timelineStep3">
+            <div class="timeline-indicator">3</div>
+            <div class="timeline-content">
+              <div class="timeline-step-header">
+                <span class="timeline-step-title">Autonomous Web Scraper Lambda</span>
+                <span class="timeline-step-service">AWS Lambda + Requests / BS4</span>
+              </div>
+              <p class="timeline-step-detail" id="timelineStep3Detail">Bounded fetch with SSRF validation and content extraction.</p>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div class="timeline-step" id="timelineStep4">
+            <div class="timeline-indicator">4</div>
+            <div class="timeline-content">
+              <div class="timeline-step-header">
+                <span class="timeline-step-title">Schema Validation Lambda</span>
+                <span class="timeline-step-service">AWS Lambda (validation.py)</span>
+              </div>
+              <p class="timeline-step-detail" id="timelineStep4Detail">Field hygiene, non-empty validation, and structure conformance.</p>
+            </div>
+          </div>
+
+          <!-- Step 5 -->
+          <div class="timeline-step" id="timelineStep5">
+            <div class="timeline-indicator">5</div>
+            <div class="timeline-content">
+              <div class="timeline-step-header">
+                <span class="timeline-step-title">Transformation &amp; Deduplication</span>
+                <span class="timeline-step-service">AWS Lambda (transformation.py)</span>
+              </div>
+              <p class="timeline-step-detail" id="timelineStep5Detail">Mojibake cleanup and deterministic SHA-256 fingerprinting.</p>
+            </div>
+          </div>
+
+          <!-- Step 6 -->
+          <div class="timeline-step" id="timelineStep6">
+            <div class="timeline-indicator">6</div>
+            <div class="timeline-content">
+              <div class="timeline-step-header">
+                <span class="timeline-step-title">Dual-Tier Cloud Storage</span>
+                <span class="timeline-step-service">Amazon S3 &amp; Amazon DynamoDB</span>
+              </div>
+              <p class="timeline-step-detail" id="timelineStep6Detail">Raw HTML snapshot to S3; structured items stored in DynamoDB.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-primary" id="pipelineViewTableBtn" style="display: none;">
+            View Structured Records &rarr;
+          </button>
+          <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-outline" id="pipelineAwsConsoleLink" style="display: none;">
+            Inspect in AWS Step Functions Console &rarr;
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         SCREEN 6: DATASETS LIBRARY
+         ==================================================================== -->
+    <section class="screen-view" id="screen-datasets">
+      <div class="screen-header">
+        <span class="screen-eyebrow">Cloud Data Catalog</span>
+        <h2 class="screen-title serif-heading">Datasets Library</h2>
+        <p class="screen-desc">
+          Browse and manage extracted datasets stored in Amazon DynamoDB and partitioned Amazon S3 buckets.
+        </p>
+      </div>
+
+      <div class="table-toolbar">
+        <div class="toolbar-group">
+          <input type="text" class="input-text input-mono" id="datasetsSearchInput" placeholder="Filter datasets by name, ID or domain..." style="width: 320px;">
+        </div>
+        <div class="toolbar-group">
+          <button type="button" class="btn btn-secondary btn-sm" id="refreshDatasetsCatalogBtn">
+            Refresh Catalog
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="datasetsNewScrapeBtn">
+            + Scrape New Target
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Dataset ID</th>
+              <th>Display Name</th>
+              <th>Source Website</th>
+              <th>Records</th>
+              <th>Extraction Mode</th>
+              <th>Storage Destination</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="datasetsCatalogBody">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         SCREEN 7: STRUCTURED DATA TABLE
+         ==================================================================== -->
+    <section class="screen-view" id="screen-table">
+      <div class="screen-header">
+        <span class="screen-eyebrow">Structured Entity Store</span>
+        <h2 class="screen-title serif-heading">Structured Results Table</h2>
+        <p class="screen-desc">
+          Inspect, filter, search, sort, and export individual records stored in Amazon DynamoDB. Click any row for field-level inspection.
+        </p>
+      </div>
+
+      <div class="table-toolbar">
+        <div class="toolbar-group">
+          <label class="form-label" for="tableDatasetSelector" style="margin: 0; font-size: 0.78rem;">Dataset:</label>
+          <select class="input-text input-mono" id="tableDatasetSelector" style="width: 220px; padding: 0.35rem 0.65rem;">
+            <option value="books_toscrape">Books to Scrape</option>
+            <option value="quotes_toscrape">Quotes to Scrape</option>
+            <option value="hacker_news_live">Hacker News Live</option>
+            <option value="travel_books_generic">Travel Books (Generic)</option>
+          </select>
+          <button type="button" class="btn btn-secondary btn-sm" id="refreshTableRecordsBtn">
+            Refresh from Cloud
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <input type="text" class="input-text" id="tableRecordSearchInput" placeholder="Search records..." style="width: 240px; padding: 0.35rem 0.65rem;">
+          <select class="input-text input-mono" id="tablePageSizeSelect" style="width: 90px; padding: 0.35rem 0.5rem;">
+            <option value="10">10 / page</option>
+            <option value="25" selected>25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+          </select>
+          <button type="button" class="btn btn-outline btn-sm" id="exportCsvBtn">
+            Export CSV
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" id="exportJsonBtn">
+            Export JSON
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table" id="mainDataTable">
+          <thead id="mainDataTableHead">
+            <!-- Injected via JavaScript based on dataset schema -->
+          </thead>
+          <tbody id="mainDataTableBody">
+            <!-- Injected via JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-pagination">
+        <span id="tablePaginationInfo">Showing 0 of 0 records</span>
+        <div style="display: flex; gap: 0.4rem; align-items: center;">
+          <button type="button" class="btn btn-outline btn-sm" id="tablePrevPageBtn" disabled>&larr; Prev</button>
+          <span id="tablePageIndicator" style="font-family: var(--font-mono); font-size: 0.75rem; padding: 0 0.5rem;">Page 1 of 1</span>
+          <button type="button" class="btn btn-outline btn-sm" id="tableNextPageBtn" disabled>Next &rarr;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         SCREEN 8: RUN DETAILS & LOGS
+         ==================================================================== -->
+    <section class="screen-view" id="screen-runs">
+      <div class="screen-header">
+        <span class="screen-eyebrow">Audit &amp; Observability</span>
+        <h2 class="screen-title serif-heading">Execution Details &amp; Logs</h2>
+        <p class="screen-desc">
+          Chronological execution trail and diagnostic error logs from AWS Step Functions and API Gateway invocations.
+        </p>
+      </div>
+
+      <div class="surface-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+          <h3 class="panel-title">Execution Audit Trail</h3>
+          <button type="button" class="btn btn-sm btn-outline" id="refreshRunsHistoryBtn">Refresh History</button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Execution ID</th>
+                <th>Timestamp</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Scraped</th>
+                <th>Cleaned</th>
+                <th>Cost (USD)</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="runsHistoryTableBody">
+              <!-- Rendered via JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Execution Log Stream Panel -->
+      <div class="surface-panel">
+        <div class="panel-header">
+          <h3 class="panel-title">Diagnostic Log Stream</h3>
+          <span class="badge" id="logStreamStatusBadge">SYSTEM LOGS</span>
+        </div>
+        <div class="log-stream-box" id="logStreamBox">
+          <div class="log-entry"><span class="log-time">[2026-10-24T01:28:00Z]</span> System initialized: API Gateway router online.</div>
+          <div class="log-entry"><span class="log-time">[2026-10-24T01:28:02Z]</span> SSRF protection active: Blocked CIDR ranges 127.0.0.0/8, 10.0.0.0/8, 169.254.0.0/16, ::1/128.</div>
+          <div class="log-entry"><span class="log-time">[2026-10-24T01:28:05Z]</span> Step Functions state machine ARN registered: the-cloud-scraper-pipeline-sm.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         SCREEN: ARCHITECTURE REFERENCE
+         ==================================================================== -->
+    <section class="screen-view" id="screen-architecture">
+      <div class="screen-header">
+        <span class="screen-eyebrow">Cloud Architecture Design &bull; BCSE355L</span>
+        <h2 class="screen-title serif-heading">System Architecture &amp; Lineage</h2>
+        <p class="screen-desc">
+          Detailed technical reference of the deployed serverless infrastructure on AWS Sydney (ap-southeast-2).
+        </p>
+      </div>
+
+      <div class="surface-panel" style="margin-bottom: 1.5rem;">
+        <span class="screen-eyebrow">Orchestration State Machine</span>
+        <h3 class="panel-title" style="margin: 0.35rem 0 0.75rem 0;">AWS Step Functions Flow</h3>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+          The pipeline implements a decoupled, standard state machine orchestrating 5 dedicated Lambda tasks with an isolated SQS Dead-Letter Queue.
+        </p>
+
+        <div style="background-color: var(--bg-input); padding: 1.25rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.7; color: var(--text-secondary);">
+          [REST API Gateway / EventBridge Schedule]<br>
+          &nbsp;&nbsp;&darr; POST /scrape<br>
+          [Job Dispatcher Lambda] &rarr; start_execution()<br>
+          &nbsp;&nbsp;&darr;<br>
+          [AWS Step Functions: the-cloud-scraper-pipeline-sm]<br>
+          &nbsp;&nbsp;&boxvr;&minus;&minus; Task 1: Scraper Lambda (SSRF safe, robots.txt, S3 raw HTML archive)<br>
+          &nbsp;&nbsp;&boxvr;&minus;&minus; Task 2: Validation Lambda (Schema validation &amp; required field check)<br>
+          &nbsp;&nbsp;&boxvr;&minus;&minus; Task 3: Transformation Lambda (Mojibake repair &amp; SHA-256 fingerprint)<br>
+          &nbsp;&nbsp;&boxvr;&minus;&minus; Task 4: Storage Lambda (Amazon DynamoDB &amp; S3 JSON data lake)<br>
+          &nbsp;&nbsp;&boxvr;&minus;&minus; Task 5: Notification Lambda (FinOps cost calculation &amp; SNS alert)<br>
+          &nbsp;&nbsp;&boxur;&minus;&minus; Catch [States.ALL] &rarr; Route Failure to SQS DLQ &rarr; SNS Alert &rarr; Fail
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+        <div class="surface-panel">
+          <span class="screen-eyebrow">Dual-Tier Storage</span>
+          <h3 class="panel-title" style="margin: 0.35rem 0 0.5rem 0;">S3 Data Lake vs DynamoDB</h3>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+            <strong>Tier 1 — S3 Data Lake:</strong> Partitioned raw HTML snapshots stored under <code>raw/{site_id}/{timestamp}/page.html</code> for auditability and compliance.<br><br>
+            <strong>Tier 2 — DynamoDB NoSQL:</strong> Clean, deduplicated entity records indexed with composite partition key <code>site_id</code> and sort key <code>record_id</code> (SHA-256 hash).
+          </p>
+        </div>
+
+        <div class="surface-panel">
+          <span class="screen-eyebrow">Network Security</span>
+          <h3 class="panel-title" style="margin: 0.35rem 0 0.5rem 0;">SSRF &amp; Redirect Defense</h3>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5;">
+            Every outbound connection validates IP literals and resolved hostnames against RFC 1918 private networks,
+            link-local addresses (<code>169.254.0.0/16</code>), and IPv6 loopbacks. Redirect hops are bounded and individually re-evaluated.
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ====================================================================
+       RECORD DETAIL DRAWER (MODAL)
+       ==================================================================== -->
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="drawer-panel" id="recordDetailDrawer">
+    <div class="drawer-header">
+      <h3 class="drawer-title">Record Inspection</h3>
+      <button type="button" class="drawer-close" id="drawerCloseBtn" aria-label="Close Inspector">&times;</button>
+    </div>
+    <div class="drawer-body" id="drawerBody">
+      <!-- Dynamic field content -->
+    </div>
+  </aside>
 
   <script src="app.js"></script>
 </body>

@@ -14,6 +14,8 @@ import json
 import time
 import uuid
 import argparse
+import re
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 
 # Add lambda directory to sys.path since 'lambda' is a reserved keyword in Python
@@ -131,6 +133,15 @@ def run_pipeline(
     Execute the entire serverless pipeline for a given site_id in sequence,
     mirroring AWS Step Functions execution semantics.
     """
+    if custom_url:
+        parsed_custom = urlparse(custom_url)
+        if site_id == "books_toscrape" and "books.toscrape.com" not in custom_url:
+            clean_domain = re.sub(r'[^a-zA-Z0-9_]', '_', parsed_custom.netloc.replace("www.", "")).lower()
+            site_id = clean_domain or "custom_target"
+            if not site_name:
+                site_name = parsed_custom.netloc
+            extraction_type = "generic"
+
     start_time = time.time()
     exec_id = f"exec-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -240,6 +251,8 @@ def run_pipeline(
             "transformed": 0,
             "cost_usd": scrape_result["cost_metrics"].get("estimated_total_usd", 0.0),
             "error": scrape_result.get("error", "Execution failed"),
+            "error_type": scrape_result.get("error_type", "SCRAPER_ERROR"),
+            "status_code": scrape_result.get("statusCode", 500),
         })
 
         return scrape_result
@@ -381,9 +394,8 @@ def main():
     )
     parser.add_argument(
         "--site",
-        default="books_toscrape",
-        choices=["books_toscrape", "quotes_toscrape", "webscraper_laptops", "hacker_news"],
-        help="Target site ID to run (default: books_toscrape)",
+        default=None,
+        help="Target site ID to run (e.g. books_toscrape, quotes_toscrape, hacker_news, webscraper_laptops)",
     )
     parser.add_argument("--url", default=None, help="Custom target URL override")
     parser.add_argument("--pages", type=int, default=1, help="Page limit (1-5, default: 1)")
@@ -408,8 +420,24 @@ def main():
                 args.timeout,
             )
     else:
+        site_id = args.site
+        site_name = None
+        extraction_type = "generic"
+
+        if not site_id:
+            if args.url:
+                parsed = urlparse(args.url)
+                clean_host = re.sub(r'[^a-zA-Z0-9_]', '_', parsed.netloc.replace("www.", "")).lower()
+                site_id = clean_host or "custom_target"
+                site_name = parsed.netloc or site_id
+            else:
+                site_id = "books_toscrape"
+                extraction_type = "configured"
+        elif site_id in ["books_toscrape", "quotes_toscrape", "webscraper_laptops"]:
+            extraction_type = "configured"
+
         res = run_pipeline(
-            args.site,
+            site_id,
             args.bucket,
             args.table,
             args.fixture,
@@ -417,6 +445,8 @@ def main():
             args.url,
             args.pages,
             args.timeout,
+            extraction_type=extraction_type,
+            site_name=site_name,
         )
         if res.get("status") == "SUCCESS" and res.get("sample_record"):
             print("\nSample Transformed Entity (DynamoDB & S3 format):")

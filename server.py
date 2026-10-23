@@ -196,6 +196,16 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
                 },
                 "history": history,
             })
+        # 3b. API: Preflight URL Compatibility Check
+        if path in ("/api/preflight", "/preflight"):
+            import scraper
+            target_url = query.get("url", [""])[0] or query.get("target_url", [""])[0]
+            try:
+                timeout = int(query.get("timeout", [8])[0])
+            except Exception:
+                timeout = 8
+            result = scraper.run_preflight_check(target_url, timeout=timeout)
+            self._send_json(200, result)
             return
 
         # 4. API: Download / Export (JSON or CSV)
@@ -270,6 +280,14 @@ class CloudScraperRequestHandler(BaseHTTPRequestHandler):
                 payload = json.loads(post_body.decode("utf-8")) if post_body else {}
             except Exception:
                 payload = {}
+
+            if payload.get("action") == "preflight" or path in ("/api/preflight", "/preflight"):
+                import scraper
+                target_url = payload.get("target_url") or payload.get("url") or ""
+                timeout = int(payload.get("timeout_seconds", 8))
+                result = scraper.run_preflight_check(target_url, timeout=timeout)
+                self._send_json(200, result)
+                return
 
             if payload.get("action") == "save_target" or payload.get("target_config"):
                 target_data = payload.get("target") or payload.get("target_config") or payload
