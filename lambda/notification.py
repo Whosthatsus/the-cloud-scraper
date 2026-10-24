@@ -137,6 +137,24 @@ def lambda_handler(event, context=None):
             logger.warning("Could not publish to SNS: %s", str(e))
             sns_result = {"published": False, "error": str(e)}
 
+    error_msg = event.get("error")
+    if not error_msg:
+        if "error_info" in event and isinstance(event["error_info"], dict):
+            error_msg = event["error_info"].get("Cause") or str(event["error_info"])
+        elif status != "SUCCESS":
+            error_msg = f"Pipeline execution failed at stage with status: {status}"
+        else:
+            error_msg = "None"
+
+    error_type = event.get("error_type")
+    if not error_type:
+        if "error_info" in event and isinstance(event["error_info"], dict):
+            error_type = event["error_info"].get("Error") or "PipelineExecutionError"
+        elif status != "SUCCESS":
+            error_type = "STAGE_FAILURE"
+        else:
+            error_type = "NONE"
+
     return {
         "statusCode": 200,
         "status": status,
@@ -146,6 +164,8 @@ def lambda_handler(event, context=None):
         "cost_metrics": cost_data,
         "sns_result": sns_result,
         "summary": subject,
+        "error": str(error_msg)[:512],
+        "error_type": str(error_type)[:128],
     }
 
 

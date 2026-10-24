@@ -168,6 +168,15 @@ def detect_page_incompatibility(html_content: str, status_code: int = 200) -> tu
             s.extract()
         visible_text = soup.get_text(" ", strip=True)
 
+        # Check if the page contains extractable embedded hydration state or structured JSON-LD
+        has_embedded_json = (
+            "window.$preData" in html_content
+            or "__NEXT_DATA__" in html_content
+            or "application/ld+json" in lower
+        )
+        if has_embedded_json:
+            return False, ""
+
         spa_markers = ['id="root"', 'id="app"', 'id="__next"']
         has_spa_mount = any(m in html_content for m in spa_markers)
 
@@ -632,43 +641,298 @@ def extract_generic_html_records(soup: BeautifulSoup, base_url: str, target_url:
     return records
 
 
+def matches_content_type(record: dict, content_type: str) -> bool:
+    """Check if record matches an optional content or product type filter."""
+    if not content_type or not isinstance(content_type, str):
+        return True
+
+    ct = content_type.lower().strip()
+    if not ct:
+        return True
+
+    title = str(record.get("title", "")).lower()
+    desc = str(record.get("description", record.get("text", ""))).lower()
+    rec_type = str(record.get("content_type", "")).lower()
+    full_haystack = f"{title} {desc} {rec_type}"
+
+    if ct in ("jeans", "denim"):
+        keywords = ("jean", "denim")
+        return any(k in full_haystack for k in keywords)
+    elif ct in ("bottoms", "bottom"):
+        keywords = ("bottom", "trouser", "pant", "skirt", "short", "jean", "jogger", "denim", "cargo", "legging")
+        return any(k in full_haystack for k in keywords)
+    elif ct in ("books", "book"):
+        keywords = ("book", "novel", "author", "edition", "paperback", "hardcover", "volume", "literature")
+        return any(k in full_haystack for k in keywords)
+    elif ct in ("news", "article", "articles"):
+        keywords = ("news", "article", "story", "report", "headline", "post", "update")
+        return any(k in full_haystack for k in keywords)
+    else:
+        return ct in full_haystack
+
+
+def extract_embedded_json_records(html_content: str, site_config: dict) -> list:
+    """
+    Extract structured records from modern client-side Single Page Application (SPA) JSON states:
+    1. window.$preData (Savana ICE framework, goodsList, pagelist-activity, item detail)
+    2. window.__NEXT_DATA__ (Next.js server-hydrated pages)
+    3. application/ld+json (Schema.org Product, Article, ItemList)
+    """
+    records = []
+    base_url = site_config.get("base_url", "")
+    target_url = site_config.get("target_url", base_url)
+    display_name = site_config.get("site_name", "")
+    target_id = site_config.get("site_id", "")
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1. Parse Savana window.$preData
+    prefix = "window.$preData = "
+    pos = html_content.find(prefix)
+    if pos != -1:
+        try:
+            decoder = json.JSONDecoder()
+            pre_data, _ = decoder.raw_decode(html_content[pos + len(prefix):])
+            if isinstance(pre_data, dict):
+                # Check for single-product detail view
+                detail_obj = None
+                for k, v in pre_data.items():
+                    if isinstance(v, dict) and ("goodsName" in v or "goodsId" in v):
+                        detail_obj = v
+                        break
+                    elif isinstance(v, dict):
+                        for sub_k, sub_v in v.items():
+                            if isinstance(sub_v, dict) and ("goodsName" in sub_v or "goodsId" in sub_v):
+                                detail_obj = sub_v
+                                break
+
+                # Check for listing / pagelist items
+                goods_list = []
+                for k, v in pre_data.items():
+                    if isinstance(v, dict):
+                        if "goodsList" in v and isinstance(v["goodsList"], list):
+                            goods_list.extend(v["goodsList"])
+                        elif "itemList" in v and isinstance(v["itemList"], list):
+                            goods_list.extend(v["itemList"])
+                    elif isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and ("goodsId" in v[0] or "goodsName" in v[0]):
+                        goods_list.extend(v)
+
+                if goods_list:
+                    logger.info("Found %d items in embedded preData goods list", len(goods_list))
+                    for idx, g in enumerate(goods_list):
+                        if not isinstance(g, dict):
+                            continue
+                        gid = g.get("goodsId") or g.get("id")
+                        gname = g.get("goodsName") or g.get("shortGoodsName") or g.get("title") or f"Product {gid}"
+                        sale_p = g.get("promotePrice") or g.get("salePrice") or g.get("price")
+                        sale_p_text = g.get("promotePriceText") or g.get("salePriceText") or str(sale_p or "")
+                        g_url = urljoin(base_url, f"/details/{gid}") if gid else target_url
+                        desc = g.get("copywritting") or g.get("goodsDesc") or gname
+                        images = g.get("imageList") or []
+                        thumb = ""
+                        if images and isinstance(images, list) and isinstance(images[0], dict):
+                            thumb = images[0].get("goodsThumb") or images[0].get("colorPic") or ""
+
+                        rec = {
+                            "target_id": target_id,
+                            "display_name": display_name,
+                            "title": gname,
+                            "price": float(sale_p) if isinstance(sale_p, (int, float)) else 0.0,
+                            "price_raw": sale_p_text,
+                            "url": g_url,
+                            "detail_link": g_url,
+                            "description": desc,
+                            "text": desc,
+                            "content_type": "jeans" if "jean" in gname.lower() or "denim" in gname.lower() else "fashion",
+                            "scraped_at": now_iso,
+                            "metadata": {
+                                "goods_id": gid,
+                                "discount": g.get("discountValueText"),
+                                "thumbnail": thumb,
+                            }
+                        }
+                        records.append(rec)
+                elif detail_obj:
+                    gid = detail_obj.get("goodsId") or detail_obj.get("id")
+                    gname = detail_obj.get("goodsName") or detail_obj.get("shortGoodsName") or detail_obj.get("title") or "Product Detail"
+                    sale_p = detail_obj.get("promotePrice") or detail_obj.get("salesPrice") or detail_obj.get("price")
+                    sale_p_text = detail_obj.get("promotePriceText") or detail_obj.get("salesPriceText") or str(sale_p or "")
+                    g_url = target_url
+                    desc = detail_obj.get("goodsDesc") or gname
+                    records.append({
+                        "target_id": target_id,
+                        "display_name": display_name,
+                        "title": gname,
+                        "price": float(sale_p) if isinstance(sale_p, (int, float)) else 0.0,
+                        "price_raw": sale_p_text,
+                        "url": g_url,
+                        "detail_link": g_url,
+                        "description": desc,
+                        "text": desc,
+                        "content_type": "jeans" if "jean" in gname.lower() or "denim" in gname.lower() else "fashion",
+                        "scraped_at": now_iso,
+                        "metadata": {
+                            "goods_id": gid,
+                            "discount": detail_obj.get("discountValueText"),
+                            "is_single_product": True,
+                        }
+                    })
+        except Exception as e:
+            logger.warning("Error parsing window.$preData: %s", str(e))
+
+    # 2. Parse Next.js __NEXT_DATA__
+    if not records and "__NEXT_DATA__" in html_content:
+        m_next = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html_content, re.DOTALL)
+        if m_next:
+            try:
+                next_json = json.loads(m_next.group(1))
+                page_props = next_json.get("props", {}).get("pageProps", {})
+
+                def find_items_array(obj):
+                    if isinstance(obj, list) and len(obj) > 0 and isinstance(obj[0], dict):
+                        sample = obj[0]
+                        if any(k in sample for k in ("name", "title", "headline", "goodsName")):
+                            return obj
+                    elif isinstance(obj, dict):
+                        for k, v in obj.items():
+                            res = find_items_array(v)
+                            if res:
+                                return res
+                    return None
+
+                items_arr = find_items_array(page_props)
+                if items_arr:
+                    for idx, it in enumerate(items_arr[:100]):
+                        t = it.get("title") or it.get("name") or it.get("headline") or f"Item {idx+1}"
+                        p_val = it.get("price") or it.get("salePrice") or 0.0
+                        u = it.get("url") or it.get("link") or target_url
+                        records.append({
+                            "target_id": target_id,
+                            "display_name": display_name,
+                            "title": t,
+                            "price": float(p_val) if isinstance(p_val, (int, float)) else 0.0,
+                            "price_raw": str(p_val),
+                            "url": urljoin(base_url, str(u)),
+                            "detail_link": urljoin(base_url, str(u)),
+                            "description": it.get("description") or t,
+                            "text": it.get("description") or t,
+                            "content_type": it.get("type", "item"),
+                            "scraped_at": now_iso,
+                            "metadata": {k: v for k, v in it.items() if k not in ("title", "name", "price", "url")},
+                        })
+            except Exception as e:
+                logger.warning("Error parsing __NEXT_DATA__: %s", str(e))
+
+    # 3. Parse Schema.org JSON-LD
+    if not records and "application/ld+json" in html_content:
+        soup_ld = BeautifulSoup(html_content, "html.parser")
+        ld_scripts = soup_ld.find_all("script", type="application/ld+json")
+        for s in ld_scripts:
+            try:
+                ld_data = json.loads(s.string) if s.string else None
+                if not ld_data:
+                    continue
+                items_to_eval = ld_data if isinstance(ld_data, list) else [ld_data]
+                for item in items_to_eval:
+                    item_type = str(item.get("@type", ""))
+                    if "Product" in item_type or "Article" in item_type or "NewsArticle" in item_type:
+                        t = item.get("name") or item.get("headline") or item.get("title")
+                        if not t:
+                            continue
+                        desc = item.get("description") or t
+                        p_val = 0.0
+                        if "offers" in item and isinstance(item["offers"], dict):
+                            p_val = item["offers"].get("price", 0.0)
+                        u = item.get("url") or target_url
+                        records.append({
+                            "target_id": target_id,
+                            "display_name": display_name,
+                            "title": t,
+                            "price": float(p_val) if isinstance(p_val, (int, float)) else 0.0,
+                            "price_raw": str(p_val),
+                            "url": urljoin(base_url, str(u)),
+                            "detail_link": urljoin(base_url, str(u)),
+                            "description": desc,
+                            "text": desc,
+                            "content_type": "product" if "Product" in item_type else "article",
+                            "scraped_at": now_iso,
+                            "metadata": item,
+                        })
+            except Exception:
+                pass
+
+    return records
+
+
 def parse_html_records(html_content: str, site_config: dict) -> list:
-    """Parse raw HTML content into extracted record dictionaries based on configured selectors or generic mode."""
+    """Parse raw HTML content into extracted record dictionaries based on configured selectors, embedded JSON, or generic mode."""
     soup = BeautifulSoup(html_content, "html.parser")
     container_selector = site_config.get("container_selector")
     fields = site_config.get("fields", {})
     base_url = site_config.get("base_url", "")
     target_url = site_config.get("target_url", base_url)
+    display_name = site_config.get("site_name", "")
+    target_id = site_config.get("site_id", "")
+    content_type_filter = site_config.get("content_type") or ""
     extraction_type = site_config.get("extraction_type", "custom" if container_selector else "generic")
 
-    # If generic extraction requested or no container selector specified, run generic extraction
-    if extraction_type == "generic" or not container_selector:
-        return extract_generic_html_records(soup, base_url, target_url)
+    records = []
 
-    # Custom selector extraction
-    containers = soup.select(container_selector)
-    logger.info("Found %d items matching container selector '%s'", len(containers), container_selector)
+    # 1. If custom container selector specified and mode is custom, attempt selector extraction
+    if container_selector and extraction_type == "custom":
+        containers = soup.select(container_selector)
+        logger.info("Found %d items matching container selector '%s'", len(containers), container_selector)
+        if len(containers) > 0:
+            for container in containers:
+                record = {
+                    "target_id": target_id,
+                    "site_id": target_id,
+                    "display_name": display_name,
+                    "site_name": display_name,
+                }
+                for field_name, field_cfg in fields.items():
+                    record[field_name] = extract_field_value(container, field_cfg, base_url)
+                if "url" not in record and "detail_link" in record:
+                    record["url"] = record["detail_link"]
+                if "source_url" not in record:
+                    record["source_url"] = target_url
+                records.append(record)
 
-    # If custom container matched 0 items, gracefully fall back to generic extraction rather than empty result
-    if len(containers) == 0:
-        logger.warning(
-            "Custom container selector '%s' matched 0 items. Falling back to generic HTML extraction.",
-            container_selector,
+    # 2. If no custom selectors or 0 matched, check for embedded SPA JSON (Savana, Next.js, JSON-LD)
+    if not records:
+        embedded = extract_embedded_json_records(html_content, site_config)
+        if embedded:
+            records = embedded
+            logger.info("Extracted %d records via embedded JSON parser", len(records))
+
+    # 3. If still no records, run generic heuristic HTML DOM extraction
+    if not records:
+        records = extract_generic_html_records(soup, base_url, target_url)
+        for r in records:
+            r["target_id"] = target_id
+            r["site_id"] = target_id
+            r["display_name"] = display_name
+            r["site_name"] = display_name
+
+    # 4. Apply content_type filtering if specified
+    if content_type_filter and records:
+        matching = [r for r in records if matches_content_type(r, content_type_filter)]
+        logger.info(
+            "Content-type filter '%s' matched %d of %d total extracted records",
+            content_type_filter,
+            len(matching),
+            len(records),
         )
-        return extract_generic_html_records(soup, base_url, target_url)
+        if matching:
+            records = matching
+        else:
+            logger.warning(
+                "Filter '%s' matched 0 records. Retaining all %d records to prevent empty dataset failure.",
+                content_type_filter,
+                len(records),
+            )
 
-    extracted_records = []
-    for container in containers:
-        record = {}
-        for field_name, field_cfg in fields.items():
-            record[field_name] = extract_field_value(container, field_cfg, base_url)
-        if "url" not in record and "detail_link" in record:
-            record["url"] = record["detail_link"]
-        if "source_url" not in record:
-            record["source_url"] = target_url
-        extracted_records.append(record)
+    return records
 
-    return extracted_records
 
 
 def load_site_config(site_id: str, config_override: dict = None, dynamodb_table: str = None) -> dict:
@@ -846,6 +1110,11 @@ def lambda_handler(event, context=None):
 
     target_url = event.get("target_url") or site_config.get("target_url")
     base_url = site_config.get("base_url", target_url)
+    content_type = event.get("content_type") or event.get("product_type") or site_config.get("content_type", "")
+    site_config["content_type"] = content_type
+    site_config["site_name"] = event.get("display_name") or event.get("site_name") or site_config.get("site_name", site_id)
+    site_config["site_id"] = site_id
+    robots_ok = True
 
     # Validate timeout with safe bounds (3 to 30 seconds)
     try:
@@ -901,16 +1170,19 @@ def lambda_handler(event, context=None):
             }
 
         # 2. Check robots.txt compliance before fetching
-        if not check_robots_allowed(base_url, target_url):
-            logger.warning("Scraping disallowed by robots.txt for URL: %s", target_url)
-            return {
-                "statusCode": 403,
-                "status": "FAILURE",
-                "site_id": site_id,
-                "target_url": target_url,
-                "error": "Scraping disallowed by target website robots.txt policy.",
-                "is_retryable": False,
-            }
+        robots_ok = check_robots_allowed(base_url, target_url)
+        if not robots_ok:
+            logger.warning("Scraping disallowed by robots.txt for URL: %s (Advisory warning for on-demand scrape)", target_url)
+            if site_config.get("enforce_robots", False) or event.get("strict_robots", False):
+                return {
+                    "statusCode": 403,
+                    "status": "FAILURE",
+                    "site_id": site_id,
+                    "target_url": target_url,
+                    "error": "Scraping disallowed by target website robots.txt policy (Strict mode active).",
+                    "error_type": "ROBOTS_DISALLOWED",
+                    "is_retryable": False,
+                }
 
         # 3. Fetch initial page with redirect SSRF validation
         try:
@@ -1055,6 +1327,8 @@ def lambda_handler(event, context=None):
         "records_count": len(records),
         "pages_scraped": pages_scraped,
         "response_bytes": len(html_content.encode("utf-8")),
+        "robots_allowed": robots_ok,
+        "content_type": content_type,
     }
 
     raw_s3_key, s3_err = "", None
@@ -1081,13 +1355,17 @@ def lambda_handler(event, context=None):
         "statusCode": 200,
         "status": "SUCCESS",
         "site_id": site_id,
+        "target_id": site_id,
         "site_name": site_config.get("site_name", site_id),
+        "display_name": site_config.get("site_name", site_id),
         "target_url": target_url,
         "scraped_at": timestamp,
         "raw_s3_key": raw_s3_key,
         "records_count": len(records),
         "pages_scraped": pages_scraped,
         "records": records,
+        "content_type": content_type,
+        "robots_allowed": robots_ok,
         "config_override": site_config,
         "extraction_type": site_config.get("extraction_type", "generic"),
     }

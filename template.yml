@@ -510,6 +510,7 @@ Resources:
                 "QueueUrl": "${ScraperDLQ}",
                 "MessageBody.$": "States.JsonToString($)"
               },
+              "ResultPath": "$.dlq_result",
               "Next": "Publish Failure Notification"
             },
             "Publish Success Notification": {
@@ -524,8 +525,8 @@ Resources:
             },
             "Fail Execution": {
               "Type": "Fail",
-              "Cause": "The Cloud Scraper pipeline encountered unrecoverable errors.",
-              "Error": "PipelineExecutionError"
+              "ErrorPath": "$.error_type",
+              "CausePath": "$.error"
             }
           }
         }

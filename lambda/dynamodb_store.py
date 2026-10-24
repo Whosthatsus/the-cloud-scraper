@@ -176,6 +176,7 @@ def save_target_config(table_name: str, target_config: dict) -> tuple:
             "target_url": target_config.get("target_url", ""),
             "base_url": target_config.get("base_url", target_config.get("target_url", "")),
             "extraction_type": target_config.get("extraction_type", "generic"),
+            "content_type": target_config.get("content_type", ""),
             "container_selector": target_config.get("container_selector", ""),
             "next_page_selector": target_config.get("next_page_selector", ""),
             "fields_json": json.dumps(target_config.get("fields", {})),
@@ -183,6 +184,9 @@ def save_target_config(table_name: str, target_config: dict) -> tuple:
             "timeout_seconds": int(target_config.get("timeout_seconds", 15)),
             "page_limit": int(target_config.get("page_limit", 1)),
             "enabled": bool(target_config.get("enabled", True)),
+            "record_count": int(target_config.get("record_count", 0)),
+            "last_scraped_at": target_config.get("last_scraped_at", now_iso),
+            "status": target_config.get("status", "ACTIVE"),
             "updated_at": now_iso,
         }
         table.put_item(Item=convert_floats_to_decimals(item))
@@ -226,6 +230,7 @@ def list_target_configs(table_name: str) -> list:
                 "target_url": it.get("target_url", ""),
                 "base_url": it.get("base_url", ""),
                 "extraction_type": it.get("extraction_type", "generic"),
+                "content_type": it.get("content_type", ""),
                 "container_selector": it.get("container_selector", ""),
                 "next_page_selector": it.get("next_page_selector", ""),
                 "fields": fields_val,
@@ -233,6 +238,9 @@ def list_target_configs(table_name: str) -> list:
                 "timeout_seconds": it.get("timeout_seconds", 15),
                 "page_limit": it.get("page_limit", 1),
                 "enabled": it.get("enabled", True),
+                "record_count": int(it.get("record_count", 0)) if it.get("record_count") is not None else 0,
+                "status": it.get("status", "ACTIVE"),
+                "last_scraped_at": it.get("last_scraped_at", it.get("updated_at", "")),
                 "updated_at": it.get("updated_at", ""),
             })
         return results
@@ -335,6 +343,24 @@ def lambda_handler(event, context=None):
 
     in_aws = is_running_in_aws()
     storage_mode = "AWS_PRODUCTION" if in_aws else "OFFLINE_LOCAL_MODE"
+
+    # Auto-register this dataset into the DynamoDB target catalog
+    try:
+        target_cfg = {
+            "site_id": site_id,
+            "target_id": site_id,
+            "site_name": event.get("display_name") or event.get("site_name", site_id),
+            "target_url": target_url,
+            "base_url": target_url,
+            "record_count": len(records),
+            "last_scraped_at": scraped_at or now_iso,
+            "status": "COMPLETED" if len(records) > 0 else "COMPLETED_WITH_ZERO_RECORDS",
+            "extraction_type": event.get("extraction_type", "generic"),
+            "content_type": event.get("content_type", ""),
+        }
+        save_target_config(table_name, target_cfg)
+    except Exception as reg_err:
+        logger.warning("Could not auto-register target config in DynamoDB: %s", str(reg_err))
 
     return {
         "statusCode": 200,

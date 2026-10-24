@@ -36,14 +36,16 @@ def clean_text(text: Any) -> Any:
 
 
 def parse_price(price_raw: Any) -> float:
-    """Extract numeric float value from a price string (e.g., '£51.77' -> 51.77)."""
+    """Extract numeric float value from a price string (e.g., '£51.77' -> 51.77, '₹1,253.00' -> 1253.0)."""
     if price_raw is None:
         return 0.0
     if isinstance(price_raw, (int, float)):
         return float(price_raw)
     price_str = clean_text(str(price_raw))
+    # Remove comma thousands separator between digits
+    cleaned_price = re.sub(r"(?<=\d),(?=\d)", "", price_str)
     # Extract digits and decimal point
-    match = re.search(r"(\d+(?:\.\d+)?)", price_str)
+    match = re.search(r"(\d+(?:\.\d+)?)", cleaned_price)
     if match:
         return float(match.group(1))
     return 0.0
@@ -97,17 +99,42 @@ def clean_and_normalize_record(
 ) -> Dict[str, Any]:
     """Clean and normalize individual record fields into standard structure."""
     transformed = {}
+    extra_metadata = {}
+    known_keys = {
+        "title", "name", "price", "price_raw", "rating", "rating_raw", "url", "detail_link",
+        "description", "text", "summary", "content_type", "source_url", "site_id", "target_id",
+        "site_name", "display_name", "scraped_at", "transformed_at", "record_id", "content_hash",
+        "item_index"
+    }
+
     for key, val in raw_record.items():
         if key == "price":
             transformed["price"] = parse_price(val)
             transformed["price_raw"] = clean_text(val)
+        elif key == "price_raw":
+            transformed["price_raw"] = clean_text(val)
+            if "price" not in transformed:
+                transformed["price"] = parse_price(val)
         elif key == "rating":
             transformed["rating"] = parse_rating(val)
             transformed["rating_raw"] = clean_text(val)
         elif isinstance(val, list):
-            transformed[key] = [clean_text(item) for item in val if item]
-        else:
+            cleaned_list = [clean_text(item) if isinstance(item, str) else item for item in val if item is not None]
+            transformed[key] = cleaned_list
+        elif isinstance(val, str):
             transformed[key] = clean_text(val)
+        else:
+            transformed[key] = val
+
+        if key not in known_keys and val is not None:
+            extra_metadata[key] = val
+
+    # Standardized field normalization
+    title = transformed.get("title") or transformed.get("name") or "Record"
+    url = transformed.get("url") or transformed.get("detail_link") or source_url or ""
+    description = transformed.get("description") or transformed.get("text") or transformed.get("summary") or ""
+    content_type = transformed.get("content_type") or ""
+    display_name = raw_record.get("display_name") or raw_record.get("site_name") or site_id
 
     # Compute deduplication hash and record metadata
     content_hash = generate_content_hash(transformed, site_id)
@@ -116,10 +143,19 @@ def clean_and_normalize_record(
 
     transformed["record_id"] = record_id
     transformed["content_hash"] = content_hash
+    transformed["target_id"] = site_id
     transformed["site_id"] = site_id
-    transformed["source_url"] = source_url or transformed.get("url") or transformed.get("detail_link", "")
+    transformed["display_name"] = display_name
+    transformed["title"] = title
+    transformed["url"] = url
+    transformed["detail_link"] = url
+    transformed["description"] = description
+    transformed["text"] = description
+    transformed["content_type"] = content_type
+    transformed["source_url"] = source_url or url
     transformed["scraped_at"] = scraped_at or now_iso
     transformed["transformed_at"] = now_iso
+    transformed["metadata"] = extra_metadata
 
     return transformed
 

@@ -106,15 +106,21 @@ def parse_incoming_event(event: dict) -> list:
                 return []
 
             target_url = body.get("target_url")
-            site_id = body.get("site_id")
-            if not site_id and target_url:
-                site_id = sanitize_site_id(body.get("site_name") or target_url)
+            target_id = body.get("target_id") or body.get("site_id")
+            site_name = body.get("display_name") or body.get("site_name")
+            content_type = body.get("content_type") or body.get("product_type") or ""
 
-            if site_id or target_url:
+            if not target_id and target_url:
+                target_id = sanitize_site_id(site_name or target_url)
+
+            if target_id or target_url:
                 job_cfg = {
-                    "site_id": site_id or "books_toscrape",
-                    "site_name": body.get("site_name", site_id),
+                    "site_id": target_id or "books_toscrape",
+                    "target_id": target_id or "books_toscrape",
+                    "site_name": site_name or target_id,
+                    "display_name": site_name or target_id,
                     "target_url": target_url,
+                    "content_type": content_type,
                     "extraction_type": body.get("extraction_type", "generic" if not body.get("container_selector") else "custom"),
                     "container_selector": body.get("container_selector"),
                     "next_page_selector": body.get("next_page_selector"),
@@ -133,14 +139,18 @@ def parse_incoming_event(event: dict) -> list:
         for rec in event["Records"]:
             try:
                 body = json.loads(rec.get("body", "{}"))
-                site_id = body.get("site_id")
-                if not site_id and body.get("target_url"):
-                    site_id = sanitize_site_id(body.get("target_url"))
-                if site_id:
+                target_id = body.get("target_id") or body.get("site_id")
+                target_url = body.get("target_url")
+                if not target_id and target_url:
+                    target_id = sanitize_site_id(target_url)
+                if target_id:
                     jobs.append({
-                        "site_id": site_id,
-                        "site_name": body.get("site_name", site_id),
-                        "target_url": body.get("target_url"),
+                        "site_id": target_id,
+                        "target_id": target_id,
+                        "site_name": body.get("display_name") or body.get("site_name", target_id),
+                        "display_name": body.get("display_name") or body.get("site_name", target_id),
+                        "target_url": target_url,
+                        "content_type": body.get("content_type") or body.get("product_type") or "",
                         "extraction_type": body.get("extraction_type", "generic"),
                         "container_selector": body.get("container_selector"),
                         "fields": body.get("fields", {}),
@@ -152,16 +162,20 @@ def parse_incoming_event(event: dict) -> list:
                 pass
 
     # 3. Direct or EventBridge trigger specifying a site
-    elif "site_id" in event or "target_url" in event:
+    elif "site_id" in event or "target_id" in event or "target_url" in event:
         target_url = event.get("target_url")
-        site_id = event.get("site_id")
-        if not site_id and target_url:
-            site_id = sanitize_site_id(event.get("site_name") or target_url)
+        target_id = event.get("target_id") or event.get("site_id")
+        site_name = event.get("display_name") or event.get("site_name")
+        if not target_id and target_url:
+            target_id = sanitize_site_id(site_name or target_url)
 
         jobs.append({
-            "site_id": site_id or "books_toscrape",
-            "site_name": event.get("site_name", site_id),
+            "site_id": target_id or "books_toscrape",
+            "target_id": target_id or "books_toscrape",
+            "site_name": site_name or target_id,
+            "display_name": site_name or target_id,
             "target_url": target_url,
+            "content_type": event.get("content_type") or event.get("product_type") or "",
             "extraction_type": event.get("extraction_type", "generic"),
             "container_selector": event.get("container_selector"),
             "fields": event.get("fields", {}),
@@ -175,6 +189,7 @@ def parse_incoming_event(event: dict) -> list:
         for sid in get_enabled_sites():
             jobs.append({
                 "site_id": sid,
+                "target_id": sid,
                 "triggered_by": "eventbridge_schedule",
             })
 
@@ -278,7 +293,7 @@ def describe_sfn_execution(execution_arn: str) -> dict:
                 hist = sfn_client.get_execution_history(
                     executionArn=execution_arn,
                     reverseOrder=True,
-                    maxResults=10,
+                    maxResults=25,
                 )
                 for ev in hist.get("events", []):
                     ev_type = ev.get("type")
@@ -289,7 +304,7 @@ def describe_sfn_execution(execution_arn: str) -> dict:
                             or ev.get("taskFailedEventDetails")
                             or {}
                         )
-                        if det.get("cause"):
+                        if det.get("cause") and det["cause"] != "The Cloud Scraper pipeline encountered unrecoverable errors.":
                             raw_cause = det["cause"]
                             try:
                                 parsed = json.loads(raw_cause)
@@ -301,9 +316,23 @@ def describe_sfn_execution(execution_arn: str) -> dict:
                                     err_cause = raw_cause
                             except Exception:
                                 err_cause = raw_cause
-                        if det.get("error"):
+                        if det.get("error") and det["error"] != "PipelineExecutionError":
                             err_name = det["error"]
-                        break
+
+                    # Also inspect TaskStateExited / LambdaFunctionSucceeded if Lambda returned failure status
+                    if ev_type in ("TaskStateExited", "LambdaFunctionSucceeded"):
+                        details = ev.get("stateExitedEventDetails") or ev.get("lambdaFunctionSucceededEventDetails") or {}
+                        out_str = details.get("output")
+                        if out_str and ('"FAILURE"' in out_str or '"error"' in out_str):
+                            try:
+                                out_obj = json.loads(out_str)
+                                if isinstance(out_obj, dict) and out_obj.get("error"):
+                                    err_cause = out_obj["error"]
+                                    if out_obj.get("error_type"):
+                                        err_name = out_obj["error_type"]
+                                    break
+                            except Exception:
+                                pass
             except Exception as hist_err:
                 logger.debug("Could not inspect execution history for failure details: %s", str(hist_err))
 

@@ -69,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const scrapeUrlInput = document.getElementById('scrapeUrlInput');
   const scrapeTargetIdInput = document.getElementById('scrapeTargetIdInput');
   const scrapeTargetNameInput = document.getElementById('scrapeTargetNameInput');
+  const scrapeContentTypeInput = document.getElementById('scrapeContentTypeInput');
   const extractionModeRadios = document.querySelectorAll('input[name="extractionModeRadio"]');
   const customSelectorsContainer = document.getElementById('customSelectorsContainer');
   const cssContainerSelector = document.getElementById('cssContainerSelector');
@@ -164,9 +165,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh contextual screen data
     if (screenId === 'dashboard') {
       loadDashboardMetrics();
+      loadDatasetsCatalog();
     } else if (screenId === 'datasets') {
-      renderDatasetsCatalog();
+      loadDatasetsCatalog();
     } else if (screenId === 'table') {
+      loadDatasetsCatalog();
       loadStoredDataForSite(tableDatasetSelector.value || currentSiteId);
     } else if (screenId === 'runs') {
       renderRunsHistory();
@@ -193,6 +196,9 @@ document.addEventListener('DOMContentLoaded', () => {
       mainNav.classList.toggle('mobile-open');
     });
   }
+
+  // Initial target catalog loading
+  loadDatasetsCatalog();
 
   // Handle Initial Hash
   const initialHash = window.location.hash.replace('#', '');
@@ -552,10 +558,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     currentSiteId = siteId;
 
+    const contentType = scrapeContentTypeInput ? scrapeContentTypeInput.value.trim() : '';
+
     const payload = {
       site_id: siteId,
+      target_id: siteId,
       site_name: siteName,
+      display_name: siteName,
       target_url: url,
+      content_type: contentType,
+      product_type: contentType,
       extraction_type: mode,
       page_limit: pageLimit,
       timeout_seconds: timeoutSeconds,
@@ -806,24 +818,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     appendLogEntry(`Execution for '${siteId}' SUCCEEDED in ${duration}s. Records stored: ${count}.`, 'ok');
+    loadDatasetsCatalog();
   }
 
   function finishPipelineFailure(siteId, url, errorDetail, errorType = 'FAILURE', executionArn = '') {
     const elapsed = ((performance.now() - executionStartTime) / 1000).toFixed(2);
+    const isZeroRecords = errorType === 'ZERO_RECORDS_EXTRACTED';
 
-    updateTimelineStage(2, 'failed', `Error trapped: ${errorDetail}`);
+    updateTimelineStage(2, isZeroRecords ? 'completed' : 'failed', isZeroRecords ? 'Scraper returned 0 matching records' : `Error trapped: ${errorDetail}`);
     updateTimelineStage(5, 'failed', `Quarantined failed payload to SQS DLQ '${SQS_DLQ_NAME}'`);
 
-    pipelineStateBadge.className = 'badge badge-danger';
-    pipelineStateBadge.textContent = 'QUARANTINED TO DLQ';
+    pipelineStateBadge.className = isZeroRecords ? 'badge badge-warning' : 'badge badge-danger';
+    pipelineStateBadge.textContent = isZeroRecords ? 'ZERO RECORDS' : 'QUARANTINED TO DLQ';
     pipelineElapsedTimer.textContent = `${elapsed}s elapsed`;
 
     pipelineFailureBanner.style.display = 'block';
-    pipelineFailureTitle.textContent = `Pipeline Trapped Error &rarr; Quarantined to SQS DLQ (${elapsed}s)`;
+    pipelineFailureTitle.textContent = isZeroRecords
+      ? `Completed with Zero Records (${elapsed}s)`
+      : `Pipeline Trapped Error &rarr; Quarantined to SQS DLQ (${elapsed}s)`;
     pipelineFailureMsg.innerHTML = `
-      <strong>Verified Failure Cause:</strong> ${escapeHtml(errorDetail)}<br>
-      <strong>Fault Isolation:</strong> The failed execution payload was trapped by the Step Functions Catch block and routed to 
-      <code>${SQS_DLQ_NAME}</code> with 14-day message retention. Zero upstream pipeline stall.<br>
+      <strong>Verified Status:</strong> ${escapeHtml(errorDetail)}<br>
+      <strong>Diagnostics:</strong> ${isZeroRecords
+        ? 'The scraper ran without infrastructure faults, but 0 records were extracted or matched the given criteria. Recorded in CloudWatch telemetry.'
+        : `The failed execution payload was trapped by the Step Functions Catch block and routed to <code>${SQS_DLQ_NAME}</code> with 14-day message retention. Zero upstream pipeline stall.`}<br>
       ${executionArn ? `<a href="https://${AWS_REGION}.console.aws.amazon.com/states/home?region=${AWS_REGION}#/executions/details/${encodeURIComponent(executionArn)}" target="_blank" rel="noopener noreferrer" style="color:var(--text-primary); text-decoration:underline; display:inline-block; margin-top:0.4rem;">Open Execution in AWS Step Functions Console &rarr;</a>` : ''}
     `;
 
@@ -833,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
       site_id: siteId,
       target_url: url,
       mode: 'AWS Cloud Execution',
-      status: 'FAILED',
+      status: isZeroRecords ? 'COMPLETED_WITH_ZERO_RECORDS' : 'FAILED',
       duration: parseFloat(elapsed),
       scraped: 0,
       valid: 0,
@@ -844,7 +861,7 @@ document.addEventListener('DOMContentLoaded', () => {
       error_type: errorType,
     });
 
-    appendLogEntry(`Execution for '${siteId}' FAILED: ${errorDetail}`, 'err');
+    appendLogEntry(`Execution for '${siteId}' ${isZeroRecords ? 'COMPLETED WITH ZERO RECORDS' : 'FAILED'}: ${errorDetail}`, isZeroRecords ? 'warn' : 'err');
   }
 
   function simulateLocalPipelineExecution(siteId, url, mode) {
@@ -861,9 +878,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ========================================================================
-  // 7. SCREEN 6: DATASETS LIBRARY CATALOG
+  // 7. SCREEN 6: DATASETS LIBRARY CATALOG & DYNAMIC TARGET REGISTRY
   // ========================================================================
-  function getKnownDatasetsCatalog() {
+  let cachedTargetsCatalog = [];
+
+  function getDefaultDatasetsCatalog() {
     return [
       {
         id: "books_toscrape",
@@ -900,8 +919,64 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
   }
 
+  async function loadDatasetsCatalog() {
+    try {
+      const res = await fetch(`${LIVE_API_GATEWAY_URL}?action=targets`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.targets && Array.isArray(data.targets) && data.targets.length > 0) {
+          cachedTargetsCatalog = data.targets.map(t => ({
+            id: t.site_id || t.target_id,
+            name: t.site_name || t.display_name || t.site_id,
+            url: t.target_url || t.base_url || '',
+            records: t.record_count || t.records || 20,
+            mode: t.extraction_type === 'custom' ? 'Custom CSS Selectors' : 'Generic Auto-Extraction',
+            destination: `DynamoDB (${t.site_id})`,
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('Could not refresh targets from API Gateway:', e.message);
+    }
+
+    if (!cachedTargetsCatalog.length) {
+      cachedTargetsCatalog = getDefaultDatasetsCatalog();
+    }
+
+    updateTableDatasetDropdown();
+    renderDatasetsCatalog();
+    renderDashboardActiveDatasets();
+  }
+
+  function updateTableDatasetDropdown() {
+    if (!tableDatasetSelector) return;
+    const currentVal = tableDatasetSelector.value;
+    tableDatasetSelector.innerHTML = cachedTargetsCatalog.map(d => {
+      const selected = d.id === currentVal ? ' selected' : '';
+      return `<option value="${escapeHtml(d.id)}"${selected}>${escapeHtml(d.name)}</option>`;
+    }).join('');
+    if (currentVal && Array.from(tableDatasetSelector.options).some(o => o.value === currentVal)) {
+      tableDatasetSelector.value = currentVal;
+    }
+  }
+
+  function renderDashboardActiveDatasets() {
+    if (!dashActiveDatasetsList) return;
+    dashActiveDatasetsList.innerHTML = cachedTargetsCatalog.slice(0, 6).map(d => {
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:0.35rem 0.5rem; background:var(--surface-subtle); border:1px solid var(--border-subtle); border-radius:3px;">
+          <span style="font-size:0.78rem; font-weight:500;">${escapeHtml(d.name)}</span>
+          <span class="badge badge-outline" style="font-size:0.7rem;">${d.records} records</span>
+        </div>
+      `;
+    }).join('');
+  }
+
   function renderDatasetsCatalog() {
-    const catalog = getKnownDatasetsCatalog();
+    const catalog = cachedTargetsCatalog.length ? cachedTargetsCatalog : getDefaultDatasetsCatalog();
     const q = (datasetsSearchInput?.value || '').toLowerCase().trim();
 
     const filtered = catalog.filter(d => {
@@ -945,7 +1020,7 @@ document.addEventListener('DOMContentLoaded', () => {
     datasetsSearchInput.addEventListener('input', renderDatasetsCatalog);
   }
   if (refreshDatasetsCatalogBtn) {
-    refreshDatasetsCatalogBtn.addEventListener('click', renderDatasetsCatalog);
+    refreshDatasetsCatalogBtn.addEventListener('click', loadDatasetsCatalog);
   }
   if (datasetsNewScrapeBtn) {
     datasetsNewScrapeBtn.addEventListener('click', () => switchScreen('new-scrape'));

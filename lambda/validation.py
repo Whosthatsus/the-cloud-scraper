@@ -144,6 +144,10 @@ def lambda_handler(event, context=None):
     raw_records = event.get("records", [])
     config_override = event.get("config_override")
 
+    target_id = event.get("target_id") or site_id
+    display_name = event.get("display_name") or event.get("site_name", site_id)
+    content_type = event.get("content_type", "")
+
     if not raw_records:
         logger.error("No records received in validation event for site: %s", site_id)
         return {
@@ -151,7 +155,12 @@ def lambda_handler(event, context=None):
             "status": "FAILURE",
             "Validation": "FAILURE",
             "site_id": site_id,
+            "target_id": target_id,
+            "site_name": display_name,
+            "display_name": display_name,
+            "content_type": content_type,
             "error": "No records found in scraper output to validate",
+            "error_type": "ZERO_RECORDS_EXTRACTED",
             "total_scraped": 0,
             "valid_count": 0,
             "invalid_count": 0,
@@ -190,11 +199,15 @@ def lambda_handler(event, context=None):
             "status": "FAILURE",
             "Validation": "FAILURE",
             "site_id": site_id,
-            "site_name": event.get("site_name", site_id),
+            "target_id": target_id,
+            "site_name": display_name,
+            "display_name": display_name,
             "target_url": event.get("target_url", ""),
             "scraped_at": event.get("scraped_at", ""),
             "raw_s3_key": event.get("raw_s3_key", ""),
             "error": "All scraped records failed schema validation",
+            "error_type": "VALIDATION_FAILED",
+            "content_type": content_type,
             "total_scraped": total_count,
             "valid_count": 0,
             "invalid_count": invalid_count,
@@ -209,10 +222,13 @@ def lambda_handler(event, context=None):
         "status": "SUCCESS",
         "Validation": "SUCCESS",
         "site_id": site_id,
-        "site_name": event.get("site_name", site_id),
+        "target_id": target_id,
+        "site_name": display_name,
+        "display_name": display_name,
         "target_url": event.get("target_url", ""),
         "scraped_at": event.get("scraped_at", ""),
         "raw_s3_key": event.get("raw_s3_key", ""),
+        "content_type": content_type,
         "total_scraped": total_count,
         "valid_count": valid_count,
         "invalid_count": invalid_count,
